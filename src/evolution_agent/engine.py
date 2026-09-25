@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,13 +30,16 @@ class Engine:
         return AppContract.load(self.root / app["path"])
 
     def sync(self, app_id: str = "pet-store") -> int:
-        contract = self.contract(app_id)
+        source = self.config["observationSource"]
         since = self.store.latest_source_id(app_id)
-        separator = "&" if "?" in contract.document["observationEndpoint"] else "?"
-        url = f"{contract.document['observationEndpoint']}{separator}since={since}"
-        with urllib.request.urlopen(url, timeout=5) as response:
-            payload = json.load(response)
-        return self.store.add_signals(app_id, payload["observations"])
+        if source["kind"] != "fixture":
+            raise ValueError(f"Unsupported observation source in this prototype: {source['kind']}")
+        fixture_path = (self.root / source["path"]).resolve()
+        if self.root not in fixture_path.parents:
+            raise ValueError("Observation fixture must remain inside the Trellis repository")
+        payload = json.loads(fixture_path.read_text())
+        new_observations = [item for item in payload["observations"] if int(item["id"]) > since]
+        return self.store.add_signals(app_id, new_observations)
 
     def triage(self, app_id: str = "pet-store") -> list[int]:
         return triage(
@@ -120,4 +122,3 @@ class Engine:
         self.approve(proposal["id"])
         rollback_commit = self.apply(proposal["id"])
         return f"Applied proposal {proposal['id']}; rollback commit is {rollback_commit}."
-

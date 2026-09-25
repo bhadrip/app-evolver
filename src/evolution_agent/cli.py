@@ -1,39 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import json
-import urllib.request
-from typing import Any
 
 from .dashboard import serve
 from .engine import Engine
-
-
-DEMO_FEEDBACK = [
-    "I want a wishlist so I can come back to toys later.",
-    "Please add save for later; I am comparing a few cat products.",
-    "A favorites list would be really helpful.",
-    "Can you show whether an item is in stock before I add it?",
-    "I need clearer availability information.",
-]
-
-
-def post_event(message: str, index: int) -> None:
-    body = json.dumps(
-        {
-            "type": "feedback_submitted",
-            "sessionId": f"demo-{index}",
-            "payload": {"category": "idea", "message": message, "source": "demo-seed"},
-        }
-    ).encode()
-    request = urllib.request.Request(
-        "http://127.0.0.1:8000/api/events",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=5):
-        pass
 
 
 def print_state(engine: Engine) -> None:
@@ -48,7 +18,7 @@ def print_state(engine: Engine) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Observation-driven app evolution prototype")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "seed-demo", "sync", "triage", "list", "cycle", "serve"):
+    for name in ("init", "sync", "triage", "list", "cycle", "serve"):
         subparsers.add_parser(name)
     for name in ("select", "propose"):
         command = subparsers.add_parser(name)
@@ -64,10 +34,6 @@ def main() -> None:
     engine = Engine()
     if args.command == "init":
         print(f"Initialized state at {engine.store.path}")
-    elif args.command == "seed-demo":
-        for index, message in enumerate(DEMO_FEEDBACK, start=1):
-            post_event(message, index)
-        print(f"Seeded {len(DEMO_FEEDBACK)} feedback signals.")
     elif args.command == "sync":
         print(f"Synced {engine.sync()} new signal(s).")
     elif args.command == "triage":
@@ -98,4 +64,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

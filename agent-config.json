@@ -1,6 +1,10 @@
 {
   "stateDatabase": "var/feedback-agent.db",
   "sandboxRoot": "var/sandboxes",
+  "observationSource": {
+    "kind": "fixture",
+    "path": "mock-data/observations.json"
+  },
   "apps": [
     {
       "id": "pet-store",
@@ -8,4 +12,3 @@
     }
   ]
 }
-

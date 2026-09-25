@@ -1,7 +1,8 @@
-# Feedback evolution agent
+# Trellis feedback agent
 
-This repository is a small, auditable prototype of an observation-driven product
-team. It reads sanitized signals from an app, groups them into candidate
+**Trellis** is a small, auditable prototype of an observation-driven product
+team. The name reflects its role: the app grows, while Trellis gives that growth
+structure, direction, and safe boundaries. It reads observation signals, groups them into candidate
 observations, proposes a bounded change in an isolated Git worktree, validates the
 change, and optionally waits for human decisions at two gates.
 
@@ -10,20 +11,15 @@ loop reproducible and proves the control plane before an LLM is allowed to write
 code. A model-backed planner can later produce patches under the same sandbox,
 constitution, validation, and approval controls.
 
-## Quick start
+## Quick start with mock observations
 
-In terminal 1:
+The first version deliberately reads synthetic, non-personal signals from
+[`mock-data/observations.json`](mock-data/observations.json). No running app,
+telemetry system, or model API is required to exercise the feedback workflow.
 
-```bash
-cd ../pet-store-app
-python3 -m src.pet_store.server
-```
-
-In terminal 2:
+In the feedback-agent repository:
 
 ```bash
-python3 -m src.evolution_agent.cli init
-python3 -m src.evolution_agent.cli seed-demo
 python3 -m src.evolution_agent.cli sync
 python3 -m src.evolution_agent.cli triage
 python3 -m src.evolution_agent.cli serve
@@ -32,6 +28,13 @@ python3 -m src.evolution_agent.cli serve
 Open <http://127.0.0.1:8100>. Select an observation, create a proposal, inspect
 its evidence and diff, approve it, and apply it. Refresh the pet store to see the
 new capability.
+
+To view the store before or after applying a proposal, use another terminal:
+
+```bash
+cd ../pet-store-app
+python3 -m src.pet_store.server
+```
 
 The same workflow is available from the CLI:
 
@@ -65,7 +68,8 @@ constitution. Manual commands remain available in either mode.
 ## Onboarding an existing app
 
 Add an `evolution.json` contract modeled on the pet store's contract, then add the
-checkout to `agent-config.json`. The agent requires an existing Git repository
+checkout to `agent-config.json`. Replace the fixture source with a live observation
+adapter when the control loop is ready to consume real telemetry. The agent requires an existing Git repository
 with a clean working tree before it creates a sandbox. The current deterministic
 planner supports JSON feature-flag changes; later planners can share this adapter.
 
@@ -73,4 +77,3 @@ The Git worktree is an isolation mechanism for files and history, not a hardened
 security boundary. For untrusted generated code, validation should run in an
 ephemeral container or micro-VM with network disabled, resource limits, and a
 read-only base image.
-

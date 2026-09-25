@@ -45,7 +45,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             message = f'<p class="success">{html.escape(self.notice)}</p>'
         self.__class__.notice = self.__class__.error = ""
         body = f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Evolution control room</title><style>{STYLE}</style></head>
-        <body><header><h1>Evolution control room</h1><p>Evidence before hypotheses. Validation before release.</p></header>
+        <body><header><h1>Trellis</h1><p>Guided product growth: evidence before hypotheses, validation before release.</p></header>
         <main>{message}<div class="policy"><span class="pill">Observation selection: {html.escape(hitl['observationSelection'])}</span><span class="pill">Change approval: {html.escape(hitl['changeApproval'])}</span></div>
         <form method="post"><input type="hidden" name="action" value="sync"><button>Sync & triage</button></form>
         <h2>Candidate observations</h2><div class="grid">{observation_cards}</div>
@@ -127,7 +127,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def serve(host: str = "127.0.0.1", port: int = 8100) -> None:
     DashboardHandler.engine = Engine()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
-    print(f"Evolution control room is running at http://{host}:{port}")
+    print(f"Trellis is running at http://{host}:{port}")
     server.serve_forever()
 
 
@@ -141,4 +141,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
