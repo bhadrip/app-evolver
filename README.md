@@ -1,8 +1,8 @@
-# Trellis feedback agent
+# App Evolver
 
-**Trellis** is a small, auditable prototype of an observation-driven product
-team. The name reflects its role: the app grows, while Trellis gives that growth
-structure, direction, and safe boundaries. It reads observation signals, groups them into candidate
+**App Evolver** is a small, auditable prototype of an observation-driven product
+team. It turns observation signals into candidate improvements while enforcing
+structure, direction, and safe boundaries. It groups signals into candidate
 observations, proposes a bounded change in an isolated Git worktree, validates the
 change, and optionally waits for human decisions at two gates.
 

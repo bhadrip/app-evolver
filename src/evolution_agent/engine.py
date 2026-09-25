@@ -36,7 +36,7 @@ class Engine:
             raise ValueError(f"Unsupported observation source in this prototype: {source['kind']}")
         fixture_path = (self.root / source["path"]).resolve()
         if self.root not in fixture_path.parents:
-            raise ValueError("Observation fixture must remain inside the Trellis repository")
+            raise ValueError("Observation fixture must remain inside the App Evolver repository")
         payload = json.loads(fixture_path.read_text())
         new_observations = [item for item in payload["observations"] if int(item["id"]) > since]
         return self.store.add_signals(app_id, new_observations)
