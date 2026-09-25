@@ -1,0 +1,11 @@
+{
+  "stateDatabase": "var/feedback-agent.db",
+  "sandboxRoot": "var/sandboxes",
+  "apps": [
+    {
+      "id": "pet-store",
+      "path": "../pet-store-app"
+    }
+  ]
+}
+

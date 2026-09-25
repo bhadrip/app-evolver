@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Improve the product for customers using observable evidence while preserving safety, privacy, accessibility, and user agency.",
+  "nonNegotiables": [
+    "Do not collect direct identifiers or infer sensitive traits.",
+    "Do not use deceptive, coercive, or addictive interaction patterns.",
+    "Do not weaken authentication, authorization, privacy, accessibility, audit, or rollback controls.",
+    "Every change must cite evidence, state a falsifiable hypothesis, and define a success metric.",
+    "A failed or missing validation is a failed proposal, never a warning to ignore."
+  ],
+  "humanInTheLoop": {
+    "observationSelection": "required",
+    "changeApproval": "required"
+  },
+  "automaticApprovalRiskLevels": ["low"],
+  "limits": {
+    "maxChangedFiles": 5,
+    "validationTimeoutSeconds": 60,
+    "maxEvidenceSamples": 5
+  }
+}
+
