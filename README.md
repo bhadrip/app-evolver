@@ -1,66 +1,56 @@
 # App Evolver
 
-App Evolver is a reusable companion service for applications that improve from
-observed customer behavior. It is intentionally application-agnostic: like a
-database server, one service can be configured at runtime to work with multiple
-independent applications.
+App Evolver is a pure Python library for observation-driven application
+evolution. Applications embed and configure it; App Evolver does not require a
+server, database, LangGraph, or hosted control plane.
 
-A configurable agent team groups observations, frames a hypothesis, implements a
-bounded change in a disposable Git worktree, runs the companion repository's
-checks, and opens an ordinary pull request. App Evolver does not replace Git, CI,
-branch protection, review, merge, or revert.
+The library composes agents that group observations, frame a hypothesis, prepare
+a bounded change, validate it in an isolated workspace, and open an ordinary
+pull request. It does not replace Git, CI, branch protection, review, merge, or
+revert.
 
-## Ownership boundary
+## Library shape
 
-App Evolver owns only generic orchestration:
+```python
+from pathlib import Path
 
-- the agent runtime and control-room UI;
-- runtime app registration and state;
-- worktree isolation and contract enforcement;
-- activity traces and PR creation;
-- platform-wide safety ceilings.
+from app_evolver import AppEvolver, InMemoryStateStore
 
-Every companion application owns its own:
+evolver = AppEvolver(
+    state_store=InMemoryStateStore(),
+    work_root=Path(".app-evolver-work"),
+)
+app = evolver.register_app(Path("/absolute/path/to/my-app"))
+
+evolver.sync(app["id"])
+evolver.triage(app["id"])
+```
+
+State and execution environments are separate concerns:
+
+- `StateStore` holds signals, observations, activity traces, and in-progress PR
+  metadata. v0 provides `InMemoryStateStore`.
+- The local workspace owns disposable Git worktrees and validation processes.
+  It is filesystem-backed because Git and app execution require real files.
+- Companion repositories remain the source of truth for product configuration.
+- Pull requests and the Git provider remain the durable record of code changes.
+
+A future optional package can implement the `StateStore` protocol with Postgres,
+similar to the way other libraries offer optional durable checkpointers. The core
+library will not depend on that adapter.
+
+## Companion application ownership
+
+Each application repository owns its own:
 
 - product constitution and intent;
 - observation source;
 - mutable and protected paths;
 - grounded capabilities and success metrics;
-- validation commands;
-- Git provider, base branch, and draft-PR policy.
+- validation and preview commands;
+- pull-request policy.
 
-None of those app-specific values are checked into this repository.
-
-## Run
-
-```bash
-python3 -m src.evolution_agent.cli register /absolute/path/to/your-app
-python3 -m src.evolution_agent.cli serve
-```
-
-Open <http://127.0.0.1:8100>. Apps can also be registered from the UI.
-
-For a separate runtime volume:
-
-```bash
-APP_EVOLVER_DATA_DIR=/var/lib/app-evolver \
-  python3 -m src.evolution_agent.cli serve
-```
-
-For a single companion checkout, registration can happen at startup:
-
-```bash
-APP_EVOLVER_APP=/workspace/my-app \
-  python3 -m src.evolution_agent.cli serve
-```
-
-Runtime state—including the app registry, SQLite state, customized agent team,
-and sandboxes—lives under `APP_EVOLVER_DATA_DIR`. It is excluded from Git.
-
-## Companion application contract
-
-The registered Git repository must contain `evolution.json`. The contract points
-to other app-owned resources using paths relative to that repository:
+The repository must contain an `evolution.json` contract:
 
 ```json
 {
@@ -87,31 +77,40 @@ to other app-owned resources using paths relative to that repository:
 }
 ```
 
-The evolution contract is protected: agents may read it but cannot expand their
-own authority. Contract changes require an ordinary human-reviewed PR.
+The contract is protected: agents may read it but cannot expand their own
+authority. Contract changes require an ordinary human-reviewed PR.
 
-## Control room
+## In-memory v0
+
+The following state is process-local and disappears when the process exits:
+
+- registered companion apps;
+- observations and activity traces;
+- agent configuration changes;
+- in-progress PR metadata.
+
+The local work directory is different: it contains temporary Git worktrees and
+other files required to run and validate an application. Configure it with
+`work_root` or `APP_EVOLVER_WORK_DIR`.
+
+## Optional development control room
+
+The repository includes a thin CLI and browser UI over the same public library.
+They are development adapters, not required runtime services.
+
+```bash
+uv run app-evolver --app-path /absolute/path/to/my-app serve
+```
+
+Open <http://127.0.0.1:8100>.
 
 - **Control room:** select observations and prepare checked PR branches.
-- **Agent team:** configure the reusable composite agent runtime.
+- **Agent team:** configure the process-local composite agent team.
 - **Governance:** visualize platform policy and the selected app's constitution,
   evolution surfaces, checks, and PR configuration.
 - **Activity:** inspect each agent's inputs, outputs, status, duration, and run ID.
 
-## CLI
-
-```bash
-python3 -m src.evolution_agent.cli apps
-python3 -m src.evolution_agent.cli sync --app my-app
-python3 -m src.evolution_agent.cli triage --app my-app
-python3 -m src.evolution_agent.cli list --app my-app
-python3 -m src.evolution_agent.cli select 1
-python3 -m src.evolution_agent.cli prepare-pr 1
-python3 -m src.evolution_agent.cli open-pr <branch-id>
-```
-
-The current implementation uses deterministic adapters so the control plane is
-reproducible before model-backed agents are introduced. A Git worktree isolates
-files and history but is not a hardened security boundary; untrusted generated
-code should be validated in an ephemeral container or micro-VM with network and
-resource restrictions.
+The local Git worktree is an execution workspace, not a hardened security
+boundary. A future workspace adapter can execute the same library workflow in an
+ephemeral container or remote validation sandbox. Delivery remains an ordinary
+pull request.

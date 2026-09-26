@@ -137,7 +137,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         cards = "".join(self._agent_editor(agent, app_id) for agent in self.engine.agents.all())
         return f"""
         <h2>Agent composition</h2>{self._pipeline()}
-        <p class="note">This prototype uses deterministic adapters. Names, instructions, and enabled state are persisted now; model-backed adapters can later consume the same instructions without changing the orchestration or PR workflow.</p>
+        <p class="note">This prototype uses deterministic adapters. Names, instructions, and enabled state apply to the current in-memory session; model-backed adapters can later consume the same configuration without changing the orchestration or PR workflow.</p>
         <div class="grid two">{cards}</div>
         """
 
@@ -212,7 +212,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _registration_view() -> str:
-        return """<section class="card" id="register"><span class="pill">Runtime configuration</span><h2>Register a companion app</h2><p>Provide a local Git checkout containing an <code>evolution.json</code> contract. The path is stored only in App Evolver's runtime data directory.</p><form method="post"><input type="hidden" name="action" value="register_app"><input type="hidden" name="view" value="control"><div class="field"><label>Application repository path<input name="app_path" type="text" placeholder="/path/to/app" required></label></div><button>Register app</button></form></section>"""
+        return """<section class="card" id="register"><span class="pill">Runtime configuration</span><h2>Register a companion app</h2><p>Provide a local Git checkout containing an <code>evolution.json</code> contract. The registration exists only in this process's memory and disappears when the development server stops.</p><form method="post"><input type="hidden" name="action" value="register_app"><input type="hidden" name="view" value="control"><div class="field"><label>Application repository path<input name="app_path" type="text" placeholder="/path/to/app" required></label></div><button>Register app</button></form></section>"""
 
     @staticmethod
     def _capability_card(name: str, capability: dict) -> str:
@@ -280,8 +280,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         print(f"app-evolver: {format % args}")
 
 
-def serve(host: str = "127.0.0.1", port: int = 8100) -> None:
-    DashboardHandler.engine = Engine()
+def serve(host: str = "127.0.0.1", port: int = 8100, engine: Engine | None = None) -> None:
+    DashboardHandler.engine = engine or Engine()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     print(f"App Evolver is running at http://{host}:{port}")
     server.serve_forever()

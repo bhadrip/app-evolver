@@ -1,38 +1,37 @@
 from __future__ import annotations
 
+import copy
 import json
-import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
 
 class AgentTeam:
-    def __init__(self, path: Path, default_path: Path | None = None):
-        self.path = path.resolve()
-        if not self.path.exists():
-            if not default_path:
-                raise ValueError("Agent team does not exist and no default was provided")
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(default_path, self.path)
+    """Process-local composite-agent configuration for v0."""
+
+    def __init__(self, document: dict[str, Any]):
+        self._document = copy.deepcopy(document)
+
+    @classmethod
+    def from_path(cls, path: Path) -> "AgentTeam":
+        return cls(json.loads(path.read_text()))
 
     def document(self) -> dict[str, Any]:
-        return json.loads(self.path.read_text())
+        return copy.deepcopy(self._document)
 
     def all(self) -> list[dict[str, Any]]:
-        return self.document()["agents"]
+        return copy.deepcopy(self._document["agents"])
 
     def enabled(self) -> list[dict[str, Any]]:
         return [agent for agent in self.all() if agent["enabled"]]
 
     def get(self, agent_id: str, require_enabled: bool = False) -> dict[str, Any]:
-        agent = next((item for item in self.all() if item["id"] == agent_id), None)
+        agent = next((item for item in self._document["agents"] if item["id"] == agent_id), None)
         if not agent:
             raise ValueError(f"Unknown agent: {agent_id}")
         if require_enabled and not agent["enabled"]:
             raise ValueError(f"{agent['name']} is disabled")
-        return agent
+        return copy.deepcopy(agent)
 
     def update(
         self,
@@ -43,8 +42,7 @@ class AgentTeam:
         model: str,
         instructions: str,
     ) -> None:
-        document = self.document()
-        agent = next((item for item in document["agents"] if item["id"] == agent_id), None)
+        agent = next((item for item in self._document["agents"] if item["id"] == agent_id), None)
         if not agent:
             raise ValueError(f"Unknown agent: {agent_id}")
         clean_name = name.strip()[:80]
@@ -58,27 +56,3 @@ class AgentTeam:
             model=clean_model,
             instructions=clean_instructions,
         )
-        self._write(document)
-
-    def move(self, agent_id: str, direction: str) -> None:
-        document = self.document()
-        agents = document["agents"]
-        index = next((index for index, item in enumerate(agents) if item["id"] == agent_id), None)
-        if index is None:
-            raise ValueError(f"Unknown agent: {agent_id}")
-        target = index - 1 if direction == "up" else index + 1
-        if 0 <= target < len(agents):
-            agents[index], agents[target] = agents[target], agents[index]
-            self._write(document)
-
-    def _write(self, document: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(prefix="agents-", suffix=".json", dir=self.path.parent)
-        try:
-            with os.fdopen(descriptor, "w") as temporary:
-                json.dump(document, temporary, indent=2)
-                temporary.write("\n")
-            os.replace(temporary_name, self.path)
-        finally:
-            if os.path.exists(temporary_name):
-                os.unlink(temporary_name)

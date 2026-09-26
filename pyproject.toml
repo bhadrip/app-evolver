@@ -5,16 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "app-evolver"
 version = "0.1.0"
-description = "A configurable companion service for observation-driven application evolution"
+description = "An embeddable library for observation-driven application evolution"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-app-evolver = "src.evolution_agent.cli:main"
+app-evolver = "app_evolver.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["src.evolution_agent*"]
+[tool.setuptools]
+packages = ["app_evolver", "app_evolver.resources", "app_evolver.resources.defaults"]
+
+[tool.setuptools.package-dir]
+app_evolver = "src/evolution_agent"
+"app_evolver.resources" = "src/evolution_agent/resources"
+"app_evolver.resources.defaults" = "src/evolution_agent/resources/defaults"
 
 [tool.setuptools.package-data]
-"src.evolution_agent" = ["resources/*.json", "resources/defaults/*.json"]
+"app_evolver" = ["resources/*.json", "resources/defaults/*.json"]

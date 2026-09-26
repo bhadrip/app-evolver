@@ -3,6 +3,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.app-evolver-work/
 var/*
 !var/.gitkeep
 .DS_Store

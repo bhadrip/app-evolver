@@ -17,13 +17,14 @@ def print_state(engine: Engine, app_id: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Observation-driven app evolution prototype")
+    parser = argparse.ArgumentParser(description="Optional development adapter for App Evolver")
+    parser.add_argument(
+        "--app-path", action="append", type=Path, default=[],
+        help="register a companion checkout for this process; may be repeated",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("init")
     subparsers.add_parser("apps")
     subparsers.add_parser("serve")
-    register = subparsers.add_parser("register")
-    register.add_argument("path", type=Path)
     for name in ("sync", "triage", "list", "cycle"):
         command = subparsers.add_parser(name)
         command.add_argument("--app")
@@ -38,17 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     engine = Engine()
+    for app_path in args.app_path:
+        engine.register_app(app_path)
     app_id = getattr(args, "app", None) or engine.registry.default_app_id()
-    if args.command == "init":
-        print(f"Initialized state at {engine.store.path}")
-    elif args.command == "register":
-        app = engine.register_app(args.path)
-        print(f"Registered {app['name']} ({app['id']}) from {app['path']}")
-    elif args.command == "apps":
+    if args.command == "apps":
         for app in engine.registry.all():
             print(f"{app['id']}\t{app['name']}\t{app['path']}")
     elif args.command in {"sync", "triage", "list", "cycle"} and not app_id:
-        raise SystemExit("No companion app is registered. Run: app-evolver register /path/to/app")
+        raise SystemExit("No companion app is registered. Pass --app-path /path/to/app")
     elif args.command == "sync":
         print(f"Synced {engine.sync(app_id)} new signal(s).")
     elif args.command == "triage":
@@ -67,7 +65,7 @@ def main() -> None:
     elif args.command == "cycle":
         print(engine.cycle(app_id))
     elif args.command == "serve":
-        serve()
+        serve(engine=engine)
 
 
 if __name__ == "__main__":

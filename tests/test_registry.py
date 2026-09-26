@@ -25,7 +25,7 @@ class RegistryTests(unittest.TestCase):
                 "protectedPaths": ["evolution.json"],
                 "validationCommands": []
             }))
-            registry = AppRegistry(root / "runtime" / "apps.json")
+            registry = AppRegistry()
             registered = registry.register(app)
             self.assertEqual("demo", registered["id"])
             self.assertEqual(str(app.resolve()), registry.get("demo")["path"])

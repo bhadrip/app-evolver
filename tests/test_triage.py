@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from src.evolution_agent.contracts import AppContract
-from src.evolution_agent.store import StateStore
+from src.evolution_agent.store import InMemoryStateStore
 from src.evolution_agent.triage import triage
 
 
@@ -31,7 +31,7 @@ class TriageTests(unittest.TestCase):
                 }
             }))
             contract = AppContract.load(root)
-            store = StateStore(root / "state.db")
+            store = InMemoryStateStore()
             store.add_signals("demo", [
                 {"id": 1, "type": "feedback_submitted", "payload": {"message": "Need a dark mode"}},
                 {"id": 2, "type": "page_viewed", "payload": {}},

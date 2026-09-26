@@ -1,267 +1,148 @@
 from __future__ import annotations
 
-import json
-import sqlite3
+import copy
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class StateStore:
-    def __init__(self, path: Path):
-        self.path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.initialize()
+class StateStore(Protocol):
+    """Persistence boundary implemented in memory for v0 and by Postgres later."""
 
-    def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def add_signals(self, app_id: str, signals: list[dict[str, Any]]) -> int: ...
+    def latest_source_id(self, app_id: str) -> int: ...
+    def signals(self, app_id: str) -> list[dict[str, Any]]: ...
+    def upsert_observation(
+        self, app_id: str, theme: str, summary: str, evidence: dict[str, Any], score: float
+    ) -> int: ...
+    def observations(self, app_id: str | None = None) -> list[dict[str, Any]]: ...
+    def observation(self, observation_id: int) -> dict[str, Any]: ...
+    def set_observation_status(self, observation_id: int, status: str) -> None: ...
+    def add_pull_request(self, pull_request: dict[str, Any]) -> None: ...
+    def pull_requests(self, app_id: str | None = None) -> list[dict[str, Any]]: ...
+    def pull_request(self, pull_request_id: str) -> dict[str, Any]: ...
+    def set_pull_request_opened(self, pull_request_id: str, number: int, url: str) -> None: ...
+    def add_activity(self, activity: dict[str, Any]) -> None: ...
+    def activities(self, limit: int = 100, app_id: str | None = None) -> list[dict[str, Any]]: ...
 
-    def initialize(self) -> None:
-        with self.connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS signals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    app_id TEXT NOT NULL,
-                    source_id INTEGER NOT NULL,
-                    event_type TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    UNIQUE(app_id, source_id)
-                );
-                CREATE TABLE IF NOT EXISTS observations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    app_id TEXT NOT NULL,
-                    theme TEXT NOT NULL,
-                    summary TEXT NOT NULL,
-                    evidence TEXT NOT NULL,
-                    score REAL NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'candidate',
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(app_id, theme)
-                );
-                CREATE TABLE IF NOT EXISTS proposals (
-                    id TEXT PRIMARY KEY,
-                    app_id TEXT NOT NULL,
-                    observation_id INTEGER NOT NULL,
-                    hypothesis TEXT NOT NULL,
-                    success_metric TEXT NOT NULL,
-                    risk TEXT NOT NULL,
-                    branch TEXT NOT NULL,
-                    sandbox_path TEXT NOT NULL,
-                    base_commit TEXT NOT NULL,
-                    proposed_commit TEXT NOT NULL,
-                    diff TEXT NOT NULL,
-                    validation TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(observation_id) REFERENCES observations(id)
-                );
-                CREATE TABLE IF NOT EXISTS pull_requests (
-                    id TEXT PRIMARY KEY,
-                    app_id TEXT NOT NULL,
-                    observation_id INTEGER NOT NULL,
-                    hypothesis TEXT NOT NULL,
-                    success_metric TEXT NOT NULL,
-                    risk TEXT NOT NULL,
-                    branch TEXT NOT NULL,
-                    sandbox_path TEXT NOT NULL,
-                    base_commit TEXT NOT NULL,
-                    proposed_commit TEXT NOT NULL,
-                    diff TEXT NOT NULL,
-                    validation TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    pr_number INTEGER,
-                    pr_url TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(observation_id) REFERENCES observations(id)
-                );
-                CREATE TABLE IF NOT EXISTS activity (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id TEXT NOT NULL,
-                    app_id TEXT NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    agent_name TEXT NOT NULL,
-                    stage TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    input_summary TEXT NOT NULL,
-                    output_summary TEXT NOT NULL,
-                    duration_ms INTEGER NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-                """
-            )
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO pull_requests(
-                    id, app_id, observation_id, hypothesis, success_metric, risk,
-                    branch, sandbox_path, base_commit, proposed_commit, diff,
-                    validation, status, pr_number, pr_url, created_at
-                )
-                SELECT
-                    id, app_id, observation_id, hypothesis, success_metric, risk,
-                    branch, sandbox_path, base_commit, proposed_commit, diff,
-                    validation,
-                    CASE status
-                        WHEN 'applied' THEN 'merged'
-                        WHEN 'rejected' THEN 'closed'
-                        ELSE 'checks_passed'
-                    END,
-                    NULL, NULL, created_at
-                FROM proposals
-                """
-            )
-            connection.execute(
-                "UPDATE observations SET status = 'pr_ready' WHERE status = 'proposed'"
-            )
+
+class InMemoryStateStore:
+    def __init__(self):
+        self._signals: list[dict[str, Any]] = []
+        self._observations: list[dict[str, Any]] = []
+        self._pull_requests: list[dict[str, Any]] = []
+        self._activity: list[dict[str, Any]] = []
+        self._next_signal_id = 1
+        self._next_observation_id = 1
+        self._next_activity_id = 1
 
     def add_signals(self, app_id: str, signals: list[dict[str, Any]]) -> int:
         inserted = 0
-        with self.connect() as connection:
-            for signal in signals:
-                cursor = connection.execute(
-                    """INSERT OR IGNORE INTO signals(app_id, source_id, event_type, payload, created_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (
-                        app_id,
-                        int(signal["id"]),
-                        signal["type"],
-                        json.dumps(signal.get("payload", {}), sort_keys=True),
-                        signal.get("createdAt", now()),
-                    ),
-                )
-                inserted += cursor.rowcount
+        known = {(item["app_id"], item["source_id"]) for item in self._signals}
+        for signal in signals:
+            source_id = int(signal["id"])
+            if (app_id, source_id) in known:
+                continue
+            self._signals.append(
+                {
+                    "id": self._next_signal_id,
+                    "app_id": app_id,
+                    "source_id": source_id,
+                    "event_type": signal["type"],
+                    "payload": copy.deepcopy(signal.get("payload", {})),
+                    "created_at": signal.get("createdAt", now()),
+                }
+            )
+            self._next_signal_id += 1
+            inserted += 1
+            known.add((app_id, source_id))
         return inserted
 
     def latest_source_id(self, app_id: str) -> int:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT COALESCE(MAX(source_id), 0) AS value FROM signals WHERE app_id = ?", (app_id,)
-            ).fetchone()
-        return int(row["value"])
+        return max((item["source_id"] for item in self._signals if item["app_id"] == app_id), default=0)
 
     def signals(self, app_id: str) -> list[dict[str, Any]]:
-        with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM signals WHERE app_id = ? ORDER BY source_id", (app_id,)
-            ).fetchall()
-        return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
+        values = [item for item in self._signals if item["app_id"] == app_id]
+        return copy.deepcopy(sorted(values, key=lambda item: item["source_id"]))
 
     def upsert_observation(
         self, app_id: str, theme: str, summary: str, evidence: dict[str, Any], score: float
     ) -> int:
-        with self.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO observations(app_id, theme, summary, evidence, score, status, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'candidate', ?)
-                ON CONFLICT(app_id, theme) DO UPDATE SET
-                    summary = excluded.summary,
-                    evidence = excluded.evidence,
-                    score = excluded.score,
-                    updated_at = excluded.updated_at
-                """,
-                (app_id, theme, summary, json.dumps(evidence, sort_keys=True), score, now()),
-            )
-            row = connection.execute(
-                "SELECT id FROM observations WHERE app_id = ? AND theme = ?", (app_id, theme)
-            ).fetchone()
-        return int(row["id"])
+        existing = next(
+            (item for item in self._observations if item["app_id"] == app_id and item["theme"] == theme),
+            None,
+        )
+        if existing:
+            existing.update(summary=summary, evidence=copy.deepcopy(evidence), score=score, updated_at=now())
+            return int(existing["id"])
+        observation_id = self._next_observation_id
+        self._next_observation_id += 1
+        self._observations.append(
+            {
+                "id": observation_id,
+                "app_id": app_id,
+                "theme": theme,
+                "summary": summary,
+                "evidence": copy.deepcopy(evidence),
+                "score": score,
+                "status": "candidate",
+                "updated_at": now(),
+            }
+        )
+        return observation_id
 
     def observations(self, app_id: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT * FROM observations"
-        parameters: tuple[Any, ...] = ()
-        if app_id:
-            query += " WHERE app_id = ?"
-            parameters = (app_id,)
-        query += " ORDER BY score DESC, id"
-        with self.connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
-        return [{**dict(row), "evidence": json.loads(row["evidence"])} for row in rows]
+        values = self._observations if app_id is None else [
+            item for item in self._observations if item["app_id"] == app_id
+        ]
+        return copy.deepcopy(sorted(values, key=lambda item: (-item["score"], item["id"])))
 
     def observation(self, observation_id: int) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute("SELECT * FROM observations WHERE id = ?", (observation_id,)).fetchone()
-        if not row:
+        value = next((item for item in self._observations if item["id"] == observation_id), None)
+        if not value:
             raise ValueError(f"Observation {observation_id} does not exist")
-        return {**dict(row), "evidence": json.loads(row["evidence"])}
+        return copy.deepcopy(value)
 
     def set_observation_status(self, observation_id: int, status: str) -> None:
-        with self.connect() as connection:
-            cursor = connection.execute(
-                "UPDATE observations SET status = ?, updated_at = ? WHERE id = ?",
-                (status, now(), observation_id),
-            )
-            if cursor.rowcount != 1:
-                raise ValueError(f"Observation {observation_id} does not exist")
+        value = next((item for item in self._observations if item["id"] == observation_id), None)
+        if not value:
+            raise ValueError(f"Observation {observation_id} does not exist")
+        value.update(status=status, updated_at=now())
 
     def add_pull_request(self, pull_request: dict[str, Any]) -> None:
-        fields = (
-            "id", "app_id", "observation_id", "hypothesis", "success_metric", "risk",
-            "branch", "sandbox_path", "base_commit", "proposed_commit", "diff",
-            "validation", "status", "pr_number", "pr_url", "created_at",
-        )
-        with self.connect() as connection:
-            connection.execute(
-                f"INSERT INTO pull_requests({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
-                tuple(pull_request.get(field) for field in fields),
-            )
+        if any(item["id"] == pull_request["id"] for item in self._pull_requests):
+            raise ValueError(f"PR branch {pull_request['id']} already exists")
+        self._pull_requests.append(copy.deepcopy(pull_request))
 
     def pull_requests(self, app_id: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT * FROM pull_requests"
-        parameters: tuple[Any, ...] = ()
-        if app_id:
-            query += " WHERE app_id = ?"
-            parameters = (app_id,)
-        query += " ORDER BY created_at DESC"
-        with self.connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
-        return [dict(row) for row in rows]
+        values = self._pull_requests if app_id is None else [
+            item for item in self._pull_requests if item["app_id"] == app_id
+        ]
+        return copy.deepcopy(list(reversed(values)))
 
     def pull_request(self, pull_request_id: str) -> dict[str, Any]:
-        with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
-            ).fetchone()
-        if not row:
+        value = next((item for item in self._pull_requests if item["id"] == pull_request_id), None)
+        if not value:
             raise ValueError(f"PR branch {pull_request_id} does not exist")
-        return dict(row)
+        return copy.deepcopy(value)
 
     def set_pull_request_opened(self, pull_request_id: str, number: int, url: str) -> None:
-        with self.connect() as connection:
-            cursor = connection.execute(
-                "UPDATE pull_requests SET status = 'opened', pr_number = ?, pr_url = ? WHERE id = ?",
-                (number, url, pull_request_id),
-            )
-            if cursor.rowcount != 1:
-                raise ValueError(f"PR branch {pull_request_id} does not exist")
+        value = next((item for item in self._pull_requests if item["id"] == pull_request_id), None)
+        if not value:
+            raise ValueError(f"PR branch {pull_request_id} does not exist")
+        value.update(status="opened", pr_number=number, pr_url=url)
 
     def add_activity(self, activity: dict[str, Any]) -> None:
-        fields = (
-            "run_id", "app_id", "agent_id", "agent_name", "stage", "status",
-            "input_summary", "output_summary", "duration_ms", "created_at",
-        )
-        with self.connect() as connection:
-            connection.execute(
-                f"INSERT INTO activity({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
-                tuple(activity[field] for field in fields),
-            )
+        value = copy.deepcopy(activity)
+        value["id"] = self._next_activity_id
+        self._next_activity_id += 1
+        self._activity.append(value)
 
     def activities(self, limit: int = 100, app_id: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT * FROM activity"
-        parameters: tuple[Any, ...]
-        if app_id:
-            query += " WHERE app_id = ?"
-            parameters = (app_id, limit)
-        else:
-            parameters = (limit,)
-        query += " ORDER BY id DESC LIMIT ?"
-        with self.connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
-        return [dict(row) for row in rows]
+        values = self._activity if app_id is None else [
+            item for item in self._activity if item["app_id"] == app_id
+        ]
+        return copy.deepcopy(list(reversed(values))[:limit])

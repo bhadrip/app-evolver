@@ -12,31 +12,46 @@ from typing import Any
 
 from .agents import AgentTeam
 from .contracts import AppContract
-from .sandbox import Sandbox
+from .sandbox import ChangeWorkspace, LocalGitWorkspace
 from .registry import AppRegistry
-from .store import StateStore
+from .store import InMemoryStateStore, StateStore
 from .triage import triage
 
 
 RESOURCE_ROOT = Path(__file__).resolve().parent / "resources"
 
 
-class Engine:
-    def __init__(self, resource_root: Path = RESOURCE_ROOT):
+class AppEvolver:
+    """Embeddable orchestration library with dependency-injected runtime state."""
+
+    def __init__(
+        self,
+        *,
+        state_store: StateStore | None = None,
+        registry: AppRegistry | None = None,
+        agent_team: AgentTeam | None = None,
+        workspace: ChangeWorkspace | None = None,
+        work_root: Path | None = None,
+        resource_root: Path = RESOURCE_ROOT,
+    ):
         self.resource_root = resource_root.resolve()
         self.config = json.loads((self.resource_root / "service-config.json").read_text())
-        configured_data_root = os.environ.get("APP_EVOLVER_DATA_DIR", self.config["dataDirectory"])
-        self.data_root = Path(configured_data_root)
-        if not self.data_root.is_absolute():
-            self.data_root = (Path.cwd() / self.data_root).resolve()
-        self.data_root.mkdir(parents=True, exist_ok=True)
+        configured_work_root = work_root or Path(
+            os.environ.get("APP_EVOLVER_WORK_DIR", self.config["workDirectory"])
+        )
+        self.work_root = configured_work_root
+        if not self.work_root.is_absolute():
+            self.work_root = (Path.cwd() / self.work_root).resolve()
         self.platform_policy = json.loads((self.resource_root / self.config["platformPolicy"]).read_text())
-        self.registry = AppRegistry(self.data_root / self.config["appRegistry"])
-        self.store = StateStore(self.data_root / self.config["stateDatabase"])
-        self.sandbox = Sandbox(self.data_root / self.config["sandboxDirectory"])
-        self.agents = AgentTeam(
-            self.data_root / self.config["agentTeam"],
-            self.resource_root / self.config["defaultAgentTeam"],
+        self.registry = registry or AppRegistry()
+        self.store = state_store or InMemoryStateStore()
+        if workspace is None:
+            self.work_root.mkdir(parents=True, exist_ok=True)
+            workspace = LocalGitWorkspace(self.work_root / self.config["sandboxDirectory"])
+        self.workspace = workspace
+        self.sandbox = self.workspace
+        self.agents = agent_team or AgentTeam.from_path(
+            self.resource_root / self.config["defaultAgentTeam"]
         )
         if os.environ.get("APP_EVOLVER_APP"):
             self.registry.register(Path(os.environ["APP_EVOLVER_APP"]))
@@ -120,7 +135,7 @@ class Engine:
 
         engineer_started = time.perf_counter()
         try:
-            pull_request = self.sandbox.prepare_pull_request(contract, observation, constitution)
+            pull_request = self.workspace.prepare_pull_request(contract, observation, constitution)
         except Exception as error:
             self._activity(
                 engineer, observation["app_id"], run_id, "failed",
@@ -233,3 +248,7 @@ class Engine:
             command, cwd=cwd, text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, check=False,
         )
+
+
+# Backwards-compatible name for the optional CLI and development UI adapter.
+Engine = AppEvolver

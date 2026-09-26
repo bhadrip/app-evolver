@@ -5,12 +5,20 @@ import os
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .contracts import AppContract
 
 
-class Sandbox:
+class ChangeWorkspace(Protocol):
+    """Execution boundary for local worktrees or future remote sandboxes."""
+
+    def prepare_pull_request(
+        self, contract: AppContract, observation: dict[str, Any], constitution: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+
+class LocalGitWorkspace:
     def __init__(self, root: Path):
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -111,3 +119,7 @@ class Sandbox:
             "pr_number": None,
             "pr_url": None,
         }
+
+
+# Compatibility alias for earlier prototypes.
+Sandbox = LocalGitWorkspace

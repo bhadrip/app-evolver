@@ -22,7 +22,7 @@ class AgentTeamTests(unittest.TestCase):
                 "instructions": "Group signals."
             }]
         }))
-        self.team = AgentTeam(self.path)
+        self.team = AgentTeam(json.loads(self.path.read_text()))
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -51,4 +51,3 @@ class AgentTeamTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
