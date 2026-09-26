@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("inspect", "show the effective contract and governance policy"),
         ("observe", "sync signals and produce ranked observations"),
         ("cycle", "run one automatic evolution cycle"),
+        ("memory", "list durable agent memory for an app"),
     ):
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("--app")
@@ -39,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
     propose.add_argument("theme", help="theme returned by the observe command")
     propose.add_argument("--app")
     propose.add_argument("--open", action="store_true", help="also open the GitHub pull request")
+    remember = subparsers.add_parser("remember", help="record a reviewed agent lesson")
+    remember.add_argument("agent_id")
+    remember.add_argument("content")
+    remember.add_argument("--kind", choices=("lesson", "failure", "decision", "outcome"), default="lesson")
+    remember.add_argument("--app")
     return parser
 
 
@@ -78,7 +84,7 @@ def main() -> int:
                 agents,
                 as_json=args.json,
                 human="\n".join(
-                    f"{agent['id']}\t{'enabled' if agent['enabled'] else 'disabled'}\t{agent['name']}"
+                    f"{agent['id']}\t{agent['version']}#{agent['revision']}\t{'enabled' if agent['enabled'] else 'disabled'}\t{agent['name']}"
                     for agent in agents
                 ),
             )
@@ -127,6 +133,31 @@ def main() -> int:
                     f"Opened {pull_request['pr_url']}" if pull_request["pr_url"]
                     else f"Prepared {pull_request['branch']} in {pull_request['sandbox_path']}"
                 ),
+            )
+        elif args.command == "memory":
+            app_id = _resolve_app(evolver, args.app)
+            memories = evolver.list_agent_memory(app_id)
+            _emit(
+                memories,
+                as_json=args.json,
+                human="\n".join(
+                    f"{item['id']}\t{item['agent_id']}@{item['agent_version']}\t{item['kind']}\t{item['content']}"
+                    for item in memories
+                ),
+            )
+        elif args.command == "remember":
+            app_id = _resolve_app(evolver, args.app)
+            memory = evolver.create_agent_memory(
+                app_id=app_id,
+                agent_id=args.agent_id,
+                kind=args.kind,
+                content=args.content,
+                evidence={"source": "cli-human-review"},
+            )
+            _emit(
+                memory,
+                as_json=args.json,
+                human=f"Recorded {memory['id']} for {memory['agent_id']}@{memory['agent_version']}",
             )
         elif args.command == "cycle":
             app_id = _resolve_app(evolver, args.app)

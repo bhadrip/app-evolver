@@ -37,6 +37,7 @@ proposal = evolver.prepare_pull_request(selected["id"])
 | Applications | `register_app`, `list_apps`, `get_app`, `default_app_id` |
 | Governance | `get_governance` |
 | Agent composition | `list_agents`, `get_agent_graph`, `configure_agent_graph`, `update_agent` |
+| Continual memory | `create_agent_memory`, `list_agent_memory`, `update_agent_memory`, `delete_agent_memory`, `record_pull_request_outcome` |
 | Observations | `sync_observations`, `analyze_observations`, `sync_and_analyze`, `list_observations`, `get_observation`, `select_observation` |
 | Pull requests | `prepare_pull_request`, `list_pull_requests`, `get_pull_request`, `can_open_pull_request`, `open_pull_request` |
 | Observability | `list_activity` |
@@ -59,14 +60,15 @@ class Agent(Protocol):
     def run(self, request: AgentRequest) -> AgentResponse: ...
 ```
 
-`SignalAnalystAgent`, `ProductManagerAgent`, `SoftwareEngineerAgent`,
-`QualityReviewerAgent`, and `EvidenceReviewerAgent` are concrete `BaseAgent`
-subtypes. An `AgentTeam` resolves the `kind` in each agent definition through a
-type registry, so applications can
-add another subtype without changing orchestration code. Requests and responses
-use normalized, serializable envelopes. A future MCP or A2A adapter can therefore
-implement `Agent` and translate those envelopes at the boundary; App Evolver does
-not prematurely choose either transport for its core API.
+`SignalAnalystAgent`, `ProductManagerAgent`, `UXResearcherAgent`,
+`UIDesignerAgent`, `SoftwareEngineerAgent`, `QualityReviewerAgent`,
+`EvidenceReviewerAgent`, and `AccessibilityReviewerAgent` are concrete
+`BaseAgent` subtypes. An `AgentTeam` resolves the `kind` in each agent definition
+through a type registry, so applications can add another subtype without
+changing orchestration code. Requests and responses use normalized, serializable
+envelopes. A future MCP or A2A adapter can therefore implement `Agent` and
+translate those envelopes at the boundary; App Evolver does not prematurely
+choose either transport for its core API.
 
 The agent-team document is a dependency graph. App Evolver topologically divides
 it into execution waves: agents in the same wave run in parallel; a later wave
@@ -74,6 +76,24 @@ runs only after all of its dependencies complete. Normalized upstream payloads
 are supplied to downstream agents as `dependency_outputs`. The SDK exposes this
 resolved shape through `get_agent_graph()`, and the development UI renders the
 same graph.
+
+## Continual memory and agent lineage
+
+Each agent definition has an explicit version. Changing its model or instructions
+requires a new version, and activity traces, PR proposals, and memories record the
+exact version that participated. The default graph runs product and UX work in
+parallel, feeds both into UI design and engineering, then runs quality, evidence,
+and accessibility review in parallel before a proposal becomes PR-ready.
+
+Agent memory is a separate injectable boundary. `JsonFileAgentMemoryStore` is the
+durable local default; `InMemoryAgentMemoryStore` is available for tests, and a
+future server can inject a Postgres implementation of `AgentMemoryStore`. Memory
+supports reviewed CRUD operations for lessons, failures, decisions, and outcomes.
+Runtime failures are recorded automatically, and hosts can call
+`record_pull_request_outcome` after merge, rejection, revert, or failure. Relevant
+history is supplied to later invocations, while agents remain unable to rewrite
+their constitution, implementation, or memory without going through the public
+reviewable APIs.
 
 State and execution environments are separate concerns:
 
@@ -146,6 +166,11 @@ The following state is process-local and disappears when the process exits:
 - agent configuration changes;
 - in-progress PR metadata.
 
+Agent memory is the deliberate exception: by default it is written to
+`.app-evolver-work/agent-memory.json` and survives process restarts. This follows
+the continual-harness idea of durable, inspectable learning without turning
+opaque model context into the source of truth.
+
 The local work directory is different: it contains temporary Git worktrees and
 other files required to run and validate an application. Configure it with
 `work_root` or `APP_EVOLVER_WORK_DIR`.
@@ -164,6 +189,11 @@ uv run app-evolver --app-path /absolute/path/to/my-app observe
 
 # Inspect serial and parallel agent execution waves.
 uv run app-evolver graph
+
+# Record and inspect a reviewed lesson that survives CLI processes.
+uv run app-evolver --app-path /absolute/path/to/my-app remember ui-designer \
+  "Keep the primary action visible on narrow screens."
+uv run app-evolver --app-path /absolute/path/to/my-app memory
 
 # Human-select a theme and prepare its validated PR branch in one invocation.
 uv run app-evolver --app-path /absolute/path/to/my-app propose delivery_tracking
@@ -193,6 +223,7 @@ Open <http://127.0.0.1:8100>.
 - **Governance:** visualize platform policy and the selected app's constitution,
   evolution surfaces, checks, and PR configuration.
 - **Activity:** inspect each agent's inputs, outputs, status, duration, and run ID.
+- **Memory:** inspect and curate durable lessons by app, agent, and agent version.
 
 The local Git worktree is an execution workspace, not a hardened security
 boundary. A future workspace adapter can execute the same library workflow in an

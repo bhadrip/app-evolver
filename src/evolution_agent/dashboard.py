@@ -16,7 +16,7 @@ body{margin:0}header{padding:26px max(5vw,24px) 0;background:var(--dark);color:w
 main{width:min(1180px,90vw);margin:34px auto 80px}.toolbar,.policy,.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.policy{margin:14px 0 26px}.pill{display:inline-flex;padding:6px 10px;border-radius:99px;background:var(--green-soft);font-size:.82rem;font-weight:750}.pill.off{background:#e6e8e7;color:var(--muted)}.pill.warn{background:var(--warn)}
 .app-picker label{display:flex;align-items:center;gap:10px;font-weight:750}.app-picker select{border:1px solid #aebbb5;border-radius:10px;padding:9px 12px;background:white;color:var(--ink);font:inherit}
 h2{font-family:Georgia,serif;font-size:1.8rem;margin:42px 0 16px}h3{margin:10px 0 6px}.grid{display:grid;gap:15px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 10px 30px #173d3208}.row{display:flex;justify-content:space-between;gap:20px;align-items:start}.muted{color:var(--muted)}.score{font-size:1.4rem;font-weight:800}
-button,.button{display:inline-block;background:var(--green);color:white;border:0;border-radius:99px;padding:10px 15px;font:inherit;font-weight:750;cursor:pointer;text-decoration:none}button.secondary{background:white;color:var(--ink);border:1px solid #9baba4}button:disabled{cursor:not-allowed;opacity:.48}form.inline{display:inline}.field{display:grid;gap:6px;margin-top:14px}.field label{font-weight:750}.field input,.field textarea{width:100%;border:1px solid #aebbb5;border-radius:10px;padding:10px 12px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:105px;resize:vertical}.check{display:flex;gap:9px;align-items:center;margin:14px 0}.check input{width:18px;height:18px}
+button,.button{display:inline-block;background:var(--green);color:white;border:0;border-radius:99px;padding:10px 15px;font:inherit;font-weight:750;cursor:pointer;text-decoration:none}button.secondary{background:white;color:var(--ink);border:1px solid #9baba4}button:disabled{cursor:not-allowed;opacity:.48}form.inline{display:inline}.field{display:grid;gap:6px;margin-top:14px}.field label{font-weight:750}.field input,.field textarea,.field select{width:100%;border:1px solid #aebbb5;border-radius:10px;padding:10px 12px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:105px;resize:vertical}.check{display:flex;gap:9px;align-items:center;margin:14px 0}.check input{width:18px;height:18px}
 pre{white-space:pre-wrap;overflow:auto;background:#15241f;color:#d8f3e8;padding:16px;border-radius:12px;max-height:360px}.error,.success,.note{padding:14px;border-radius:12px}.error{background:var(--bad);border:1px solid #d88870}.success{background:var(--green-soft);border:1px solid #8bab63}.note{background:var(--warn);border:1px solid #d9b96f}.pipeline{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 10px}.agent-wave{display:flex;gap:8px;padding:7px;border:1px dashed #aac0b7;border-radius:16px;position:relative}.agent-wave.parallel:before{content:"parallel";position:absolute;top:-10px;right:10px;background:var(--green-soft);padding:2px 7px;border-radius:99px;font-size:.66rem;font-weight:800}.agent-node{min-width:190px;flex:1;background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.agent-node.disabled{opacity:.5}.connector{display:grid;place-items:center;min-width:34px;color:var(--green);font-size:1.4rem}.agent-node .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.agent-node p{color:var(--muted);font-size:.86rem;margin:6px 0 0}
 .activity{position:relative;padding-left:28px}.activity:before{content:"";position:absolute;left:8px;top:10px;bottom:10px;width:2px;background:var(--line)}.activity-item{position:relative;background:white;border-bottom:1px solid var(--line);padding:14px 16px;margin-bottom:10px;border-radius:12px}.activity-item:before{content:"";position:absolute;left:-25px;top:21px;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px #f4f3ed}.activity-item.failed:before{background:#b84932}.activity-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.io{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}.io p{margin:4px 0}.empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed #aebbb5;border-radius:14px}details{margin-top:12px}summary{cursor:pointer;font-weight:700}
 .governance-map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}.governance-layer{background:white;border:1px solid var(--line);border-radius:14px;padding:18px;position:relative}.governance-layer:not(:last-child):after{content:"→";position:absolute;right:-20px;top:50%;transform:translateY(-50%);color:var(--green);font-size:1.4rem;z-index:1}.governance-layer .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.rule-list{margin:0;padding-left:20px}.rule-list li{margin:0 0 10px}.path-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.path{font-family:ui-monospace,SFMono-Regular,monospace;background:#edf0ed;padding:5px 8px;border-radius:7px;font-size:.85rem}.path.protected{background:#f8e5df}.capability{border-left:4px solid var(--green)}.kv{display:grid;grid-template-columns:minmax(130px,.4fr) 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.kv:last-child{border-bottom:0}.kv strong{color:var(--muted)}
@@ -35,7 +35,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self.send_error(HTTPStatus.NOT_FOUND)
         query = parse_qs(request.query)
         view = query.get("view", ["control"])[0]
-        if view not in {"control", "agents", "governance", "activity"}:
+        if view not in {"control", "agents", "governance", "activity", "memory"}:
             view = "control"
         message = self._message()
         apps = self.engine.list_apps()
@@ -54,6 +54,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "agents": self._agents_view,
                 "governance": self._governance_view,
                 "activity": self._activity_view,
+                "memory": self._memory_view,
             }[view](app_id)
             options = "".join(
                 f'<option value="{html.escape(item["id"])}"{" selected" if item["id"] == app_id else ""}>{html.escape(item["name"])}</option>'
@@ -63,7 +64,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         app_query = f"&app={html.escape(app_id)}" if app_id else ""
         nav = "".join(
             f'<a class="{"active" if view == key else ""}" href="/?view={key}{app_query}">{label}</a>'
-            for key, label in (("control", "Control room"), ("agents", "Agent team"), ("governance", "Governance"), ("activity", "Activity"))
+            for key, label in (("control", "Control room"), ("agents", "Agent team"), ("governance", "Governance"), ("activity", "Activity"), ("memory", "Memory"))
         )
         body = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>App Evolver</title><style>{STYLE}</style></head>
         <body><header><h1>App Evolver</h1><p>Compose agents. Observe decisions. Deliver through pull requests.</p><nav class="nav">{nav}</nav></header>
@@ -106,8 +107,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     enabled=values.get("enabled", [""])[0] == "on",
                     model=values["model"][0],
                     instructions=values["instructions"][0],
+                    version=values["version"][0],
                 )
                 self.__class__.notice = f"Saved {values['name'][0]}."
+            elif action == "add_memory":
+                memory = self.engine.create_agent_memory(
+                    app_id=app_id,
+                    agent_id=values["agent_id"][0],
+                    kind=values["kind"][0],
+                    content=values["content"][0],
+                    evidence={"source": "human-review"},
+                )
+                self.__class__.notice = f"Recorded memory {memory['id']}."
+            elif action == "delete_memory":
+                self.engine.delete_agent_memory(values["memory_id"][0])
+                self.__class__.notice = "Deleted agent memory."
+            elif action == "record_outcome":
+                memories = self.engine.record_pull_request_outcome(
+                    values["pull_request_id"][0],
+                    outcome=values["outcome"][0],
+                    feedback=values["feedback"][0],
+                )
+                self.__class__.notice = f"Recorded reviewed outcome for {len(memories)} agent versions."
             else:
                 raise ValueError(f"Unknown action: {action}")
         except Exception as error:
@@ -148,6 +169,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return f"""
         <div class="row"><div><h2>Agent activity</h2><p class="muted">Inputs, outputs, status, duration, and shared run IDs make the composite observable.</p></div><div class="policy"><span class="pill">{completed} completed</span><span class="pill {'warn' if failed else 'off'}">{failed} failed</span></div></div>
         <div class="activity">{items or '<div class="empty">Run Sync & triage or prepare a PR to generate activity.</div>'}</div>
+        """
+
+    def _memory_view(self, app_id: str) -> str:
+        memories = self.engine.list_agent_memory(app_id)
+        items = "".join(self._memory_card(item, app_id) for item in memories)
+        options = "".join(
+            f'<option value="{html.escape(agent["id"])}">{html.escape(agent["name"])} · v{html.escape(agent["version"])}</option>'
+            for agent in self.engine.list_agents()
+        )
+        return f"""
+        <div class="row"><div><h2>Continual agent memory</h2><p class="muted">Durable, reviewable lessons are scoped to an app, agent, and agent version. Agents cannot rewrite their own constitution or implementation.</p></div><span class="pill">{len(memories)} memories</span></div>
+        <section class="card"><h3>Record reviewed learning</h3><form method="post"><input type="hidden" name="action" value="add_memory"><input type="hidden" name="view" value="memory"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><div class="grid two"><div class="field"><label>Agent<select name="agent_id">{options}</select></label></div><div class="field"><label>Kind<select name="kind"><option value="lesson">Lesson</option><option value="decision">Decision</option><option value="failure">Failure</option><option value="outcome">Outcome</option></select></label></div></div><div class="field"><label>Memory<textarea name="content" required placeholder="What should this agent remember and apply next time?"></textarea></label></div><button>Record memory</button></form></section>
+        <h2>Memory history</h2><div class="grid">{items or '<div class="empty">No durable lessons yet. Failures and reviewed PR outcomes will appear here.</div>'}</div>
         """
 
     def _governance_view(self, app_id: str) -> str:
@@ -260,14 +294,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             action = self._button("open_pr", "Open draft PR", app_id=item["app_id"], pull_request_id=item["id"])
         else:
             action = '<button disabled>Open PR</button><p class="muted">Add an origin remote to enable</p>'
-        return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['branch'])}</h3><p><strong>Hypothesis:</strong> {html.escape(item['hypothesis'])}</p><p><strong>Success metric:</strong> {html.escape(item['success_metric'])}</p></div><div>{action}</div></div><details><summary>PR diff</summary><pre>{html.escape(item['diff'])}</pre></details><details><summary>Checks</summary><pre>{html.escape(item['validation'])}</pre></details></article>"""
+        lineage = " · ".join(
+            f"{agent_id}@{version}#{item.get('agent_revisions', {}).get(agent_id, 'unknown')}"
+            for agent_id, version in sorted(item.get("agent_versions", {}).items())
+        )
+        return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['branch'])}</h3><p><strong>Hypothesis:</strong> {html.escape(item['hypothesis'])}</p><p><strong>Success metric:</strong> {html.escape(item['success_metric'])}</p><p class="muted">{html.escape(lineage)}</p></div><div>{action}</div></div><details><summary>PR diff</summary><pre>{html.escape(item['diff'])}</pre></details><details><summary>Checks</summary><pre>{html.escape(item['validation'])}</pre></details><details><summary>Record reviewed outcome</summary><form method="post"><input type="hidden" name="action" value="record_outcome"><input type="hidden" name="view" value="control"><input type="hidden" name="app_id" value="{html.escape(item['app_id'])}"><input type="hidden" name="pull_request_id" value="{html.escape(item['id'])}"><div class="field"><label>Outcome<select name="outcome"><option value="merged">Merged</option><option value="rejected">Rejected</option><option value="reverted">Reverted</option><option value="failed">Failed</option></select></label></div><div class="field"><label>What should the agents learn?<textarea name="feedback" required></textarea></label></div><button>Record outcome</button></form></details></article>"""
 
     def _agent_editor(self, agent: dict, app_id: str) -> str:
         checked = " checked" if agent["enabled"] else ""
-        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['kind'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
+        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['kind'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Version<input name="version" value="{html.escape(agent['version'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
 
     def _activity_item(self, item: dict) -> str:
-        return f"""<article class="activity-item {html.escape(item['status'])}"><div class="activity-head"><div><span class="pill">{html.escape(item['stage'])}</span><strong> {html.escape(item['agent_name'])}</strong></div><span class="muted">run {html.escape(item['run_id'])} · {item['duration_ms']} ms</span></div><div class="io"><div><strong>Input</strong><p>{html.escape(item['input_summary'])}</p></div><div><strong>Output · {html.escape(item['status'])}</strong><p>{html.escape(item['output_summary'])}</p></div></div></article>"""
+        return f"""<article class="activity-item {html.escape(item['status'])}"><div class="activity-head"><div><span class="pill">{html.escape(item['stage'])}</span><strong> {html.escape(item['agent_name'])}</strong> <span class="muted">v{html.escape(item.get('agent_version', 'unknown'))} · {html.escape(item.get('agent_revision', 'unknown'))}</span></div><span class="muted">run {html.escape(item['run_id'])} · {item['duration_ms']} ms</span></div><div class="io"><div><strong>Input</strong><p>{html.escape(item['input_summary'])}</p></div><div><strong>Output · {html.escape(item['status'])}</strong><p>{html.escape(item['output_summary'])}</p></div></div></article>"""
+
+    def _memory_card(self, item: dict, app_id: str) -> str:
+        return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['kind'])}</span><h3>{html.escape(item['agent_id'])} · v{html.escape(item['agent_version'])}</h3><p>{html.escape(item['content'])}</p><p class="muted">agent revision {html.escape(item.get('agent_revision', 'unknown'))} · memory {html.escape(item['id'])} · memory revision {item['revision']} · {html.escape(item['created_at'])}</p></div><form method="post"><input type="hidden" name="action" value="delete_memory"><input type="hidden" name="view" value="memory"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="memory_id" value="{html.escape(item['id'])}"><button class="secondary">Delete</button></form></div></article>"""
 
     def _message(self) -> str:
         message = ""

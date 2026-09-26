@@ -25,15 +25,18 @@ from .models import (
     AgentDefinition,
     AgentGraphSnapshot,
     AgentGraphNode,
+    AgentMemory,
     AnalysisResult,
     AppInfo,
     GovernanceSnapshot,
     Observation,
     ObservationStatus,
+    MemoryKind,
     PullRequestProposal,
     SyncAndAnalyzeResult,
     SyncResult,
 )
+from .memory import AgentMemoryStore, JsonFileAgentMemoryStore
 from .sandbox import ChangeWorkspace, LocalGitWorkspace
 from .registry import AppRegistry
 from .store import InMemoryStateStore, StateStore
@@ -51,6 +54,7 @@ class AppEvolver:
         state_store: StateStore | None = None,
         registry: AppRegistry | None = None,
         agent_team: AgentTeam | None = None,
+        memory_store: AgentMemoryStore | None = None,
         workspace: ChangeWorkspace | None = None,
         work_root: Path | None = None,
         resource_root: Path = RESOURCE_ROOT,
@@ -68,6 +72,12 @@ class AppEvolver:
         )
         self._registry = registry or AppRegistry()
         self._state_store = state_store or InMemoryStateStore()
+        if memory_store is None:
+            self.work_root.mkdir(parents=True, exist_ok=True)
+            memory_store = JsonFileAgentMemoryStore(
+                self.work_root / self.config["agentMemory"]
+            )
+        self._memory_store = memory_store
         if workspace is None:
             self.work_root.mkdir(parents=True, exist_ok=True)
             workspace = LocalGitWorkspace(self.work_root / self.config["sandboxDirectory"])
@@ -132,11 +142,82 @@ class AppEvolver:
         enabled: bool,
         model: str,
         instructions: str,
+        version: str | None = None,
     ) -> AgentDefinition:
         self._agent_team.update(
-            agent_id, name=name, enabled=enabled, model=model, instructions=instructions
+            agent_id,
+            name=name,
+            enabled=enabled,
+            model=model,
+            instructions=instructions,
+            version=version,
         )
         return self._agent_team.get(agent_id)
+
+    def create_agent_memory(
+        self,
+        *,
+        app_id: str,
+        agent_id: str,
+        kind: MemoryKind,
+        content: str,
+        evidence: dict[str, Any] | None = None,
+    ) -> AgentMemory:
+        """Persist a reviewable lesson, failure, decision, or outcome."""
+        definition = self._agent_team.get_definition(agent_id)
+        return self._create_memory(
+            app_id=app_id,
+            agent_id=agent_id,
+            agent_version=definition["version"],
+            agent_revision=definition["revision"],
+            kind=kind,
+            content=content,
+            evidence=evidence,
+        )
+
+    def list_agent_memory(
+        self,
+        app_id: str,
+        *,
+        agent_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AgentMemory]:
+        self.get_app(app_id)
+        if agent_id is not None:
+            self._agent_team.get_definition(agent_id)
+        return self._memory_store.list(app_id=app_id, agent_id=agent_id, limit=limit)
+
+    def update_agent_memory(self, memory_id: str, content: str) -> AgentMemory:
+        return self._memory_store.update(memory_id, content)
+
+    def delete_agent_memory(self, memory_id: str) -> None:
+        self._memory_store.delete(memory_id)
+
+    def record_pull_request_outcome(
+        self, pull_request_id: str, *, outcome: str, feedback: str
+    ) -> list[AgentMemory]:
+        """Turn reviewed PR outcomes into durable, version-scoped experience."""
+        if outcome not in {"merged", "rejected", "reverted", "failed"}:
+            raise ConfigurationError(f"Unsupported pull request outcome: {outcome}")
+        pull_request = self.get_pull_request(pull_request_id)
+        return [
+            self._create_memory(
+                app_id=pull_request["app_id"],
+                agent_id=agent_id,
+                agent_version=version,
+                agent_revision=pull_request["agent_revisions"][agent_id],
+                kind="outcome" if outcome == "merged" else "failure",
+                content=f"PR {pull_request_id} was {outcome}: {feedback}",
+                evidence={
+                    "pullRequestId": pull_request_id,
+                    "outcome": outcome,
+                    "agentVersion": version,
+                    "baseCommit": pull_request["base_commit"],
+                    "proposedCommit": pull_request["proposed_commit"],
+                },
+            )
+            for agent_id, version in pull_request["agent_versions"].items()
+        ]
 
     def sync_observations(self, app_id: str) -> SyncResult:
         """Read new signals from the app-owned observation source."""
@@ -192,6 +273,7 @@ class AppEvolver:
                         "max_samples": int(
                             self._constitution(app_id)["limits"]["maxEvidenceSamples"]
                         ),
+                        "memories": self._memory_context("signal-analyst", app_id),
                     },
                 )
             })["signal-analyst"]
@@ -211,6 +293,7 @@ class AppEvolver:
             )
             return {"app_id": app_id, "observation_ids": result}
         except Exception as error:
+            self._remember_failure(agent.definition, app_id, run_id, error)
             self._activity(
                 agent.definition, app_id, run_id, "failed", f"{len(signals)} observation signals",
                 str(error), started,
@@ -262,10 +345,15 @@ class AppEvolver:
 
         run_id = uuid.uuid4().hex[:10]
         product_agent = self._agent_team.get_agent("product-manager", require_enabled=True)
+        ux_agent = self._agent_team.get_agent("ux-researcher", require_enabled=True)
+        ui_agent = self._agent_team.get_agent("ui-designer", require_enabled=True)
         engineer = self._agent_team.get_agent("software-engineer", require_enabled=True)
         reviewer = self._agent_team.get_agent("quality-reviewer", require_enabled=True)
         evidence_reviewer = self._agent_team.get_agent(
             "evidence-reviewer", require_enabled=True
+        )
+        accessibility_reviewer = self._agent_team.get_agent(
+            "accessibility-reviewer", require_enabled=True
         )
         contract = self._contract(observation["app_id"])
         capability = contract.capability(observation["theme"])
@@ -277,29 +365,80 @@ class AppEvolver:
                     run_id=run_id,
                     app_id=observation["app_id"],
                     task="frame_hypothesis",
-                    payload={"observation": observation, "capability": capability},
+                    payload={
+                        "observation": observation,
+                        "capability": capability,
+                        "memories": self._memory_context(
+                            "product-manager", observation["app_id"]
+                        ),
+                    },
+                ),
+                "ux-researcher": AgentRequest(
+                    run_id=run_id,
+                    app_id=observation["app_id"],
+                    task="research_user_experience",
+                    payload={
+                        "observation": observation,
+                        "capability": capability,
+                        "memories": self._memory_context(
+                            "ux-researcher", observation["app_id"]
+                        ),
+                    },
+                ),
+                "ui-designer": AgentRequest(
+                    run_id=run_id,
+                    app_id=observation["app_id"],
+                    task="design_interface",
+                    payload={
+                        "observation": observation,
+                        "capability": capability,
+                        "memories": self._memory_context(
+                            "ui-designer", observation["app_id"]
+                        ),
+                    },
                 ),
                 "software-engineer": AgentRequest(
                     run_id=run_id,
                     app_id=observation["app_id"],
                     task="plan_grounded_change",
-                    payload={"observation": observation, "capability": capability},
+                    payload={
+                        "observation": observation,
+                        "capability": capability,
+                        "memories": self._memory_context(
+                            "software-engineer", observation["app_id"]
+                        ),
+                    },
                 ),
             })
         except AgentExecutionError as error:
             failed_agent = self._agent_team.get_agent(error.agent_id).definition
+            self._remember_failure(
+                failed_agent, observation["app_id"], run_id, error.cause
+            )
             self._activity(
                 failed_agent, observation["app_id"], run_id, "failed",
                 f"Selected observation {observation_id}", str(error), product_started,
             )
             raise
         product_response = composite_responses["product-manager"]
+        ux_response = composite_responses["ux-researcher"]
+        ui_response = composite_responses["ui-designer"]
         engineer_response = composite_responses["software-engineer"]
         hypothesis = str(product_response.payload["hypothesis"])
         self._activity(
             product_agent.definition, observation["app_id"], run_id, "completed",
             f"{observation['evidence']['signalCount']} signals about {observation['theme']}",
             product_response.summary, product_started,
+        )
+        self._activity(
+            ux_agent.definition, observation["app_id"], run_id, "completed",
+            f"Customer evidence for {observation['theme']}",
+            ux_response.summary, product_started,
+        )
+        self._activity(
+            ui_agent.definition, observation["app_id"], run_id, "completed",
+            f"Product and UX direction for {observation['theme']}",
+            ui_response.summary, product_started,
         )
 
         engineer_started = time.perf_counter()
@@ -312,11 +451,28 @@ class AppEvolver:
                 hypothesis=hypothesis,
             )
         except Exception as error:
+            self._remember_failure(
+                engineer.definition, observation["app_id"], run_id, error
+            )
             self._activity(
                 engineer.definition, observation["app_id"], run_id, "failed",
                 f"Selected observation {observation_id}", str(error), engineer_started,
             )
             raise
+        pull_request["agent_versions"] = {
+            definition["id"]: definition["version"]
+            for definition in self._agent_team.enabled()
+        }
+        pull_request["agent_revisions"] = {
+            definition["id"]: definition["revision"]
+            for definition in self._agent_team.enabled()
+        }
+        pull_request["agent_evidence"] = {
+            "product-manager": copy.deepcopy(dict(product_response.payload)),
+            "ux-researcher": copy.deepcopy(dict(ux_response.payload)),
+            "ui-designer": copy.deepcopy(dict(ui_response.payload)),
+            "software-engineer": copy.deepcopy(dict(engineer_response.payload)),
+        }
         reviewer_started = time.perf_counter()
         try:
             review_responses = self._agent_team.run_composite({
@@ -328,6 +484,9 @@ class AppEvolver:
                         "status": pull_request["status"],
                         "diff": pull_request["diff"],
                         "validation": pull_request["validation"],
+                        "memories": self._memory_context(
+                            "quality-reviewer", observation["app_id"]
+                        ),
                     },
                 ),
                 "evidence-reviewer": AgentRequest(
@@ -339,6 +498,22 @@ class AppEvolver:
                         "base_commit": pull_request["base_commit"],
                         "proposed_commit": pull_request["proposed_commit"],
                         "validation": pull_request["validation"],
+                        "memories": self._memory_context(
+                            "evidence-reviewer", observation["app_id"]
+                        ),
+                    },
+                ),
+                "accessibility-reviewer": AgentRequest(
+                    run_id=run_id,
+                    app_id=observation["app_id"],
+                    task="review_accessibility",
+                    payload={
+                        "design": pull_request["agent_evidence"]["ui-designer"],
+                        "diff": pull_request["diff"],
+                        "validation": pull_request["validation"],
+                        "memories": self._memory_context(
+                            "accessibility-reviewer", observation["app_id"]
+                        ),
                     },
                 ),
             })
@@ -348,6 +523,10 @@ class AppEvolver:
                 else "quality-reviewer"
             )
             failed_agent = self._agent_team.get_agent(failed_id).definition
+            self._remember_failure(
+                failed_agent, observation["app_id"], run_id,
+                error.cause if isinstance(error, AgentExecutionError) else error,
+            )
             self._activity(
                 failed_agent, observation["app_id"], run_id, "failed",
                 f"Diff on {pull_request['branch']}", str(error), reviewer_started,
@@ -355,6 +534,14 @@ class AppEvolver:
             raise
         reviewer_response = review_responses["quality-reviewer"]
         evidence_response = review_responses["evidence-reviewer"]
+        accessibility_response = review_responses["accessibility-reviewer"]
+        pull_request["agent_evidence"].update({
+            "quality-reviewer": copy.deepcopy(dict(reviewer_response.payload)),
+            "evidence-reviewer": copy.deepcopy(dict(evidence_response.payload)),
+            "accessibility-reviewer": copy.deepcopy(
+                dict(accessibility_response.payload)
+            ),
+        })
         pull_request["created_at"] = datetime.now(timezone.utc).isoformat()
         self._state_store.add_pull_request(pull_request)
         self._state_store.set_observation_status(observation_id, "pr_ready")
@@ -374,6 +561,13 @@ class AppEvolver:
             evidence_reviewer.definition, observation["app_id"], run_id, "completed",
             f"Evidence for {pull_request['branch']}",
             evidence_response.summary,
+            reviewer_started,
+        )
+        self._activity(
+            accessibility_reviewer.definition,
+            observation["app_id"], run_id, "completed",
+            f"UI acceptance criteria for {pull_request['branch']}",
+            accessibility_response.summary,
             reviewer_started,
         )
         return pull_request
@@ -404,6 +598,7 @@ class AppEvolver:
             )
         observation = self._state_store.observation(pull_request["observation_id"])
         capability = contract.capability(observation["theme"])
+        design = pull_request["agent_evidence"].get("ui-designer", {})
         body = (
             "## Evidence\n"
             + "\n".join(f"- {sample}" for sample in observation["evidence"].get("samples", []))
@@ -414,7 +609,17 @@ class AppEvolver:
             )
             + f"\n\n## Hypothesis\n{pull_request['hypothesis']}"
             + f"\n\n## Success metric\n{pull_request['success_metric']}"
+            + "\n\n## UX and UI acceptance\n"
+            + f"{design.get('direction', 'No UI direction recorded.')}\n"
+            + "\n".join(
+                f"- {criterion}" for criterion in design.get("acceptanceCriteria", [])
+            )
             + f"\n\n## Code provenance\nBase `{pull_request['base_commit']}` → proposed `{pull_request['proposed_commit']}`"
+            + "\n\n## Agent lineage\n"
+            + "\n".join(
+                f"- `{agent_id}` version `{version}` revision `{pull_request['agent_revisions'][agent_id]}`"
+                for agent_id, version in sorted(pull_request["agent_versions"].items())
+            )
             + "\n\n## Validation evidence\n```text\n"
             + pull_request["validation"][:10_000]
             + "\n```"
@@ -474,6 +679,8 @@ class AppEvolver:
                 "app_id": app_id,
                 "agent_id": agent["id"],
                 "agent_name": agent["name"],
+                "agent_version": agent["version"],
+                "agent_revision": agent["revision"],
                 "stage": agent["stage"],
                 "status": status,
                 "input_summary": input_summary[:1_000],
@@ -482,6 +689,61 @@ class AppEvolver:
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+    def _memory_context(self, agent_id: str, app_id: str) -> list[AgentMemory]:
+        return self._memory_store.list(app_id=app_id, agent_id=agent_id, limit=12)
+
+    def _create_memory(
+        self,
+        *,
+        app_id: str,
+        agent_id: str,
+        agent_version: str,
+        agent_revision: str,
+        kind: MemoryKind,
+        content: str,
+        evidence: dict[str, Any] | None = None,
+    ) -> AgentMemory:
+        self.get_app(app_id)
+        self._agent_team.get_definition(agent_id)
+        clean_content = content.strip()[:4_000]
+        if not clean_content:
+            raise ConfigurationError("Agent memory content is required")
+        if kind not in {"lesson", "failure", "decision", "outcome"}:
+            raise ConfigurationError(f"Unsupported agent memory kind: {kind}")
+        return self._memory_store.create({
+            "id": uuid.uuid4().hex[:12],
+            "app_id": app_id,
+            "agent_id": agent_id,
+            "agent_version": agent_version,
+            "agent_revision": agent_revision,
+            "kind": kind,
+            "content": clean_content,
+            "evidence": copy.deepcopy(evidence or {}),
+            "revision": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def _remember_failure(
+        self,
+        agent: AgentDefinition,
+        app_id: str,
+        run_id: str,
+        error: Exception,
+    ) -> None:
+        try:
+            self._create_memory(
+                app_id=app_id,
+                agent_id=agent["id"],
+                agent_version=agent["version"],
+                agent_revision=agent["revision"],
+                kind="failure",
+                content=str(error),
+                evidence={"runId": run_id, "errorType": type(error).__name__},
+            )
+        except Exception:
+            # Memory failure must never hide the original agent failure.
+            pass
 
     @staticmethod
     def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:

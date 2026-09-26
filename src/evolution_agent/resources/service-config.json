@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "workDirectory": ".app-evolver-work",
   "sandboxDirectory": "sandboxes",
+  "agentMemory": "agent-memory.json",
   "defaultAgentTeam": "defaults/agents.json",
   "platformPolicy": "defaults/platform-policy.json"
 }

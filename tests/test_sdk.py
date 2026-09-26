@@ -138,9 +138,14 @@ class PublicSdkTests(unittest.TestCase):
             self.assertEqual(
                 [
                     ["signal-analyst"],
-                    ["product-manager"],
+                    ["product-manager", "ux-researcher"],
+                    ["ui-designer"],
                     ["software-engineer"],
-                    ["evidence-reviewer", "quality-reviewer"],
+                    [
+                        "accessibility-reviewer",
+                        "evidence-reviewer",
+                        "quality-reviewer",
+                    ],
                 ],
                 evolver.get_agent_graph()["waves"],
             )
@@ -152,6 +157,12 @@ class PublicSdkTests(unittest.TestCase):
             workspace = RecordingWorkspace()
             evolver = AppEvolver(workspace=workspace, work_root=root / "unused")
             evolver.register_app(app)
+            evolver.create_agent_memory(
+                app_id="demo",
+                agent_id="ui-designer",
+                kind="lesson",
+                content="Keep the primary action visible on narrow screens.",
+            )
             evolver.sync_and_analyze("demo")
             observation = evolver.list_observations("demo")[0]
             evolver.select_observation(observation["id"])
@@ -161,10 +172,26 @@ class PublicSdkTests(unittest.TestCase):
             self.assertEqual("1.0.0", proposal["customer_app_versions"][0]["version"])
             self.assertEqual("$ test\nOK", proposal["validation"])
             self.assertIn("dark theme activation", proposal["hypothesis"])
+            self.assertIn(
+                "Keep the primary action visible on narrow screens.",
+                proposal["agent_evidence"]["ui-designer"]["appliedLessons"],
+            )
             self.assertTrue(
-                {"Product Manager", "Software Engineer", "Quality Reviewer", "Evidence Reviewer"}
+                {
+                    "Product Manager", "UX Researcher", "UI Designer",
+                    "Software Engineer", "Quality Reviewer", "Evidence Reviewer",
+                    "Accessibility Reviewer",
+                }
                 <= {item["agent_name"] for item in evolver.list_activity("demo")},
             )
+            outcome_memories = evolver.record_pull_request_outcome(
+                proposal["id"], outcome="rejected", feedback="Primary action was obscured."
+            )
+            self.assertEqual(len(proposal["agent_versions"]), len(outcome_memories))
+
+            reopened = AppEvolver(work_root=root / "unused")
+            reopened.register_app(app)
+            self.assertGreaterEqual(len(reopened.list_agent_memory("demo")), 2)
 
     def test_cli_observe_uses_the_public_workflow(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -187,6 +214,34 @@ class PublicSdkTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(1, payload["run"]["inserted"])
             self.assertEqual("dark_mode", payload["observations"][0]["theme"])
+
+    def test_cli_memory_survives_separate_processes(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            app = create_app(root)
+            environment = dict(os.environ, APP_EVOLVER_WORK_DIR=str(root / "work"))
+            base = [
+                sys.executable, "-m", "src.evolution_agent.cli",
+                "--app-path", str(app), "--json",
+            ]
+            remembered = subprocess.run(
+                base + [
+                    "remember", "ui-designer",
+                    "Keep the primary action visible on narrow screens.",
+                ],
+                cwd=Path(__file__).resolve().parents[1], env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            self.assertEqual(0, remembered.returncode, remembered.stderr)
+            listed = subprocess.run(
+                base + ["memory"],
+                cwd=Path(__file__).resolve().parents[1], env=environment,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            self.assertEqual(0, listed.returncode, listed.stderr)
+            memories = json.loads(listed.stdout)
+            self.assertEqual("ui-designer", memories[0]["agent_id"])
+            self.assertEqual("1.0.0", memories[0]["agent_version"])
 
 
 if __name__ == "__main__":

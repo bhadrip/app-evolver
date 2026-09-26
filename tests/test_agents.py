@@ -24,6 +24,7 @@ class AgentTeamTests(unittest.TestCase):
             "agents": [{
                 "id": "analyst",
                 "kind": "signal_analyst",
+                "version": "1.0.0",
                 "name": "Analyst",
                 "stage": "Observe",
                 "enabled": True,
@@ -44,9 +45,11 @@ class AgentTeamTests(unittest.TestCase):
             enabled=False,
             model="deterministic",
             instructions="Retain evidence when grouping signals.",
+            version="1.1.0",
         )
         agent = self.team.get("analyst")
         self.assertEqual("Customer Signal Analyst", agent["name"])
+        self.assertEqual("1.1.0", agent["version"])
         self.assertFalse(agent["enabled"])
         self.assertEqual([], self.team.enabled())
 
@@ -57,6 +60,13 @@ class AgentTeamTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "disabled"):
             self.team.get("analyst", require_enabled=True)
+
+    def test_behavior_change_requires_a_new_agent_version(self):
+        with self.assertRaisesRegex(ValueError, "new version"):
+            self.team.update(
+                "analyst", name="Analyst", enabled=True, model="deterministic",
+                instructions="Use a different strategy.",
+            )
 
     def test_builtin_agent_implements_normalized_protocol(self):
         agent = self.team.get_agent("analyst", require_enabled=True)

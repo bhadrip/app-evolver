@@ -1,18 +1,22 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "workflow": {
     "nodes": [
       {"agentId": "signal-analyst", "dependsOn": []},
       {"agentId": "product-manager", "dependsOn": ["signal-analyst"]},
-      {"agentId": "software-engineer", "dependsOn": ["product-manager"]},
+      {"agentId": "ux-researcher", "dependsOn": ["signal-analyst"]},
+      {"agentId": "ui-designer", "dependsOn": ["product-manager", "ux-researcher"]},
+      {"agentId": "software-engineer", "dependsOn": ["product-manager", "ui-designer"]},
       {"agentId": "quality-reviewer", "dependsOn": ["software-engineer"]},
-      {"agentId": "evidence-reviewer", "dependsOn": ["software-engineer"]}
+      {"agentId": "evidence-reviewer", "dependsOn": ["software-engineer"]},
+      {"agentId": "accessibility-reviewer", "dependsOn": ["software-engineer"]}
     ]
   },
   "agents": [
     {
       "id": "signal-analyst",
       "kind": "signal_analyst",
+      "version": "1.0.0",
       "name": "Signal Analyst",
       "stage": "Observe",
       "enabled": true,
@@ -23,6 +27,7 @@
     {
       "id": "product-manager",
       "kind": "product_manager",
+      "version": "1.0.0",
       "name": "Product Manager",
       "stage": "Frame",
       "enabled": true,
@@ -31,8 +36,31 @@
       "instructions": "Turn the selected observation into a falsifiable hypothesis and a measurable success criterion consistent with the product intent."
     },
     {
+      "id": "ux-researcher",
+      "kind": "ux_researcher",
+      "version": "1.0.0",
+      "name": "UX Researcher",
+      "stage": "Frame",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Ground user needs and experience risks in observed behavior, customer quotes, app versions, and durable lessons from earlier outcomes."
+    },
+    {
+      "id": "ui-designer",
+      "kind": "ui_designer",
+      "version": "1.0.0",
+      "name": "UI Designer",
+      "stage": "Design",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Translate product and UX evidence into a minimal interface direction with observable, accessible acceptance criteria."
+    },
+    {
       "id": "software-engineer",
       "kind": "software_engineer",
+      "version": "1.0.0",
       "name": "Software Engineer",
       "stage": "Implement",
       "enabled": true,
@@ -43,6 +71,7 @@
     {
       "id": "quality-reviewer",
       "kind": "quality_reviewer",
+      "version": "1.0.0",
       "name": "Quality Reviewer",
       "stage": "Validate",
       "enabled": true,
@@ -53,12 +82,24 @@
     {
       "id": "evidence-reviewer",
       "kind": "evidence_reviewer",
+      "version": "1.0.0",
       "name": "Evidence Reviewer",
       "stage": "Validate",
       "enabled": true,
       "model": "deterministic",
       "access": "read-only",
       "instructions": "Require customer evidence, app-version provenance, code revisions, and validation output before a pull request can be proposed."
+    },
+    {
+      "id": "accessibility-reviewer",
+      "kind": "accessibility_reviewer",
+      "version": "1.0.0",
+      "name": "Accessibility Reviewer",
+      "stage": "Validate",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Review UI acceptance criteria for keyboard access, focus behavior, semantic labels, contrast, and reversible feedback before PR delivery."
     }
   ]
 }

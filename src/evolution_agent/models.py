@@ -1,11 +1,12 @@
 """Public data contracts returned by :class:`AppEvolver`."""
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 ObservationStatus = Literal["candidate", "selected", "pr_ready", "pr_open"]
 PullRequestStatus = Literal["checks_passed", "opened"]
 RunStatus = Literal["completed", "failed"]
+MemoryKind = Literal["lesson", "failure", "decision", "outcome"]
 
 
 class AppInfo(TypedDict):
@@ -53,6 +54,9 @@ class PullRequestProposal(TypedDict):
     validation: str
     evidence: ObservationEvidence
     customer_app_versions: list[AppVersionEvidence]
+    agent_versions: dict[str, str]
+    agent_revisions: dict[str, str]
+    agent_evidence: dict[str, Any]
     status: PullRequestStatus
     pr_number: int | None
     pr_url: str | None
@@ -62,6 +66,8 @@ class PullRequestProposal(TypedDict):
 class AgentDefinition(TypedDict):
     id: str
     kind: str
+    version: str
+    revision: NotRequired[str]
     name: str
     stage: str
     enabled: bool
@@ -86,6 +92,8 @@ class ActivityEntry(TypedDict):
     app_id: str
     agent_id: str
     agent_name: str
+    agent_version: str
+    agent_revision: str
     stage: str
     status: RunStatus
     input_summary: str
@@ -116,3 +124,16 @@ class GovernanceSnapshot(TypedDict):
     contract: dict[str, Any]
     constitution: dict[str, Any]
     platform_policy: dict[str, Any]
+
+
+class AgentMemory(TypedDict):
+    id: str
+    app_id: str
+    agent_id: str
+    agent_version: str
+    agent_revision: str
+    kind: MemoryKind
+    content: str
+    evidence: dict[str, Any]
+    revision: int
+    created_at: str

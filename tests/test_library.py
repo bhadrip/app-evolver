@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.evolution_agent import AppEvolver, InMemoryStateStore
+from src.evolution_agent import AppEvolver, InMemoryAgentMemoryStore, InMemoryStateStore
 
 
 class FakeWorkspace:
@@ -32,7 +32,11 @@ class LibraryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             work_root = Path(temporary_directory) / "unused"
             workspace = FakeWorkspace()
-            evolver = AppEvolver(workspace=workspace, work_root=work_root)
+            evolver = AppEvolver(
+                workspace=workspace,
+                memory_store=InMemoryAgentMemoryStore(),
+                work_root=work_root,
+            )
             self.assertFalse(work_root.exists())
 
 

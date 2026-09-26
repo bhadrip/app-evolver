@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
@@ -96,13 +97,58 @@ class ProductManagerAgent(BaseAgent):
         return {"hypothesis": hypothesis}, f"Hypothesis: {hypothesis}"
 
 
+class UXResearcherAgent(BaseAgent):
+    task = "research_user_experience"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        observation = payload["observation"]
+        memories = payload.get("memories", [])
+        findings = {
+            "userNeed": observation["summary"],
+            "evidenceSamples": copy.deepcopy(observation["evidence"].get("samples", [])),
+            "priorLessons": [item["content"] for item in memories if item["kind"] == "lesson"],
+            "risk": payload["capability"].get("risk", "unknown"),
+        }
+        return findings, f"Grounded UX direction in {observation['evidence']['signalCount']} signals"
+
+
+class UIDesignerAgent(BaseAgent):
+    task = "design_interface"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        dependencies = payload.get("dependency_outputs", {})
+        prior_lessons = [
+            item["content"] for item in payload.get("memories", [])
+            if item["kind"] in {"lesson", "failure"}
+        ]
+        user_need = dependencies.get("ux-researcher", {}).get(
+            "userNeed", payload["capability"]["description"]
+        )
+        design = {
+            "direction": f"Expose {payload['capability']['description'].lower()} with clear state and feedback.",
+            "userNeed": user_need,
+            "acceptanceCriteria": [
+                "The capability is discoverable without blocking the primary task.",
+                "State changes have visible confirmation and reversible affordances.",
+                "Keyboard, focus, labels, and contrast remain testable.",
+            ],
+            "appliedLessons": prior_lessons,
+        }
+        return design, "Produced UI direction and testable acceptance criteria"
+
+
 class SoftwareEngineerAgent(BaseAgent):
     task = "plan_grounded_change"
 
     def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
         capability = payload["capability"]
         plan = copy.deepcopy(capability["change"])
-        return {"change": plan}, f"Planned {plan['kind']} change in {plan['path']}"
+        return {
+            "change": plan,
+            "design": copy.deepcopy(
+                payload.get("dependency_outputs", {}).get("ui-designer", {})
+            ),
+        }, f"Planned {plan['kind']} change in {plan['path']}"
 
 
 class QualityReviewerAgent(BaseAgent):
@@ -124,12 +170,29 @@ class EvidenceReviewerAgent(BaseAgent):
         return {"approved": True}, "Evidence includes customer signals and app-version provenance"
 
 
+class AccessibilityReviewerAgent(BaseAgent):
+    task = "review_accessibility"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        design = payload.get("design", {})
+        criteria = design.get("acceptanceCriteria", [])
+        if not criteria:
+            raise ValidationFailed("Accessibility review requires UI acceptance criteria")
+        return {
+            "approved": True,
+            "criteriaReviewed": copy.deepcopy(criteria),
+        }, "Accessibility acceptance criteria are present for implementation review"
+
+
 BUILT_IN_AGENT_TYPES: dict[str, AgentFactory] = {
     "signal_analyst": SignalAnalystAgent,
     "product_manager": ProductManagerAgent,
+    "ux_researcher": UXResearcherAgent,
+    "ui_designer": UIDesignerAgent,
     "software_engineer": SoftwareEngineerAgent,
     "quality_reviewer": QualityReviewerAgent,
     "evidence_reviewer": EvidenceReviewerAgent,
+    "accessibility_reviewer": AccessibilityReviewerAgent,
 }
 
 
@@ -160,7 +223,7 @@ class AgentTeam:
         return copy.deepcopy(self._document)
 
     def all(self) -> list[AgentDefinition]:
-        return copy.deepcopy(self._document["agents"])
+        return [self._materialize(definition) for definition in self._document["agents"]]
 
     def enabled(self) -> list[AgentDefinition]:
         return [agent for agent in self.all() if agent["enabled"]]
@@ -267,7 +330,7 @@ class AgentTeam:
             raise NotFoundError(f"Unknown agent: {agent_id}")
         if require_enabled and not definition["enabled"]:
             raise ConfigurationError(f"{definition['name']} is disabled")
-        return copy.deepcopy(definition)
+        return self._materialize(definition)
 
     def get_agent(self, agent_id: str, require_enabled: bool = False) -> Agent:
         self.get_definition(agent_id, require_enabled=require_enabled)
@@ -285,6 +348,7 @@ class AgentTeam:
         enabled: bool,
         model: str,
         instructions: str,
+        version: str | None = None,
     ) -> None:
         agent = next((item for item in self._document["agents"] if item["id"] == agent_id), None)
         if not agent:
@@ -292,13 +356,22 @@ class AgentTeam:
         clean_name = name.strip()[:80]
         clean_model = model.strip()[:80]
         clean_instructions = instructions.strip()[:2_000]
-        if not clean_name or not clean_model or not clean_instructions:
-            raise ConfigurationError("Name, model, and instructions are required")
+        clean_version = (version or agent["version"]).strip()[:40]
+        if not clean_name or not clean_model or not clean_instructions or not clean_version:
+            raise ConfigurationError("Name, version, model, and instructions are required")
+        behavior_changed = (
+            clean_model != agent["model"] or clean_instructions != agent["instructions"]
+        )
+        if behavior_changed and clean_version == agent["version"]:
+            raise ConfigurationError(
+                "Changing an agent's model or instructions requires a new version"
+            )
         agent.update(
             name=clean_name,
             enabled=enabled,
             model=clean_model,
             instructions=clean_instructions,
+            version=clean_version,
         )
         self._instances[agent_id] = self._instantiate(agent)
 
@@ -316,7 +389,17 @@ class AgentTeam:
             raise ConfigurationError(
                 f"Agent {definition['id']} references unknown agent kind: {kind}"
             )
-        instance = agent_type(copy.deepcopy(definition))
+        instance = agent_type(self._materialize(definition))
         if not isinstance(instance, Agent):
             raise ConfigurationError(f"Agent kind {kind} does not implement the Agent protocol")
         return instance
+
+    @staticmethod
+    def _materialize(definition: AgentDefinition) -> AgentDefinition:
+        value = copy.deepcopy(definition)
+        source = copy.deepcopy(value)
+        source.pop("revision", None)
+        value["revision"] = hashlib.sha256(
+            json.dumps(source, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()[:12]
+        return value
