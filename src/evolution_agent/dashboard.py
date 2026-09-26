@@ -17,7 +17,8 @@ h2{font-family:Georgia,serif;font-size:1.8rem;margin:42px 0 16px}h3{margin:10px 
 button,.button{display:inline-block;background:var(--green);color:white;border:0;border-radius:99px;padding:10px 15px;font:inherit;font-weight:750;cursor:pointer;text-decoration:none}button.secondary{background:white;color:var(--ink);border:1px solid #9baba4}button:disabled{cursor:not-allowed;opacity:.48}form.inline{display:inline}.field{display:grid;gap:6px;margin-top:14px}.field label{font-weight:750}.field input,.field textarea{width:100%;border:1px solid #aebbb5;border-radius:10px;padding:10px 12px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:105px;resize:vertical}.check{display:flex;gap:9px;align-items:center;margin:14px 0}.check input{width:18px;height:18px}
 pre{white-space:pre-wrap;overflow:auto;background:#15241f;color:#d8f3e8;padding:16px;border-radius:12px;max-height:360px}.error,.success,.note{padding:14px;border-radius:12px}.error{background:var(--bad);border:1px solid #d88870}.success{background:var(--green-soft);border:1px solid #8bab63}.note{background:var(--warn);border:1px solid #d9b96f}.pipeline{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 10px}.agent-node{min-width:190px;flex:1;background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.agent-node.disabled{opacity:.5}.connector{display:grid;place-items:center;min-width:34px;color:var(--green);font-size:1.4rem}.agent-node .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.agent-node p{color:var(--muted);font-size:.86rem;margin:6px 0 0}
 .activity{position:relative;padding-left:28px}.activity:before{content:"";position:absolute;left:8px;top:10px;bottom:10px;width:2px;background:var(--line)}.activity-item{position:relative;background:white;border-bottom:1px solid var(--line);padding:14px 16px;margin-bottom:10px;border-radius:12px}.activity-item:before{content:"";position:absolute;left:-25px;top:21px;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px #f4f3ed}.activity-item.failed:before{background:#b84932}.activity-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.io{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}.io p{margin:4px 0}.empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed #aebbb5;border-radius:14px}details{margin-top:12px}summary{cursor:pointer;font-weight:700}
-@media(max-width:760px){.grid.two,.io{grid-template-columns:1fr}.row{flex-direction:column}.pipeline{flex-direction:column;overflow:visible}.connector{transform:rotate(90deg);min-height:30px}.agent-node{min-width:0}.nav{overflow:auto}}
+.governance-map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}.governance-layer{background:white;border:1px solid var(--line);border-radius:14px;padding:18px;position:relative}.governance-layer:not(:last-child):after{content:"→";position:absolute;right:-20px;top:50%;transform:translateY(-50%);color:var(--green);font-size:1.4rem;z-index:1}.governance-layer .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.rule-list{margin:0;padding-left:20px}.rule-list li{margin:0 0 10px}.path-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.path{font-family:ui-monospace,SFMono-Regular,monospace;background:#edf0ed;padding:5px 8px;border-radius:7px;font-size:.85rem}.path.protected{background:#f8e5df}.capability{border-left:4px solid var(--green)}.kv{display:grid;grid-template-columns:minmax(130px,.4fr) 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.kv:last-child{border-bottom:0}.kv strong{color:var(--muted)}
+@media(max-width:760px){.grid.two,.io,.governance-map{grid-template-columns:1fr}.row{flex-direction:column}.pipeline{flex-direction:column;overflow:visible}.connector{transform:rotate(90deg);min-height:30px}.agent-node{min-width:0}.nav{overflow:auto}.governance-layer:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-23px;transform:translateX(50%)}}
 """
 
 
@@ -31,17 +32,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if request.path != "/":
             return self.send_error(HTTPStatus.NOT_FOUND)
         view = parse_qs(request.query).get("view", ["control"])[0]
-        if view not in {"control", "agents", "activity"}:
+        if view not in {"control", "agents", "governance", "activity"}:
             view = "control"
         message = self._message()
         content = {
             "control": self._control_view,
             "agents": self._agents_view,
+            "governance": self._governance_view,
             "activity": self._activity_view,
         }[view]()
         nav = "".join(
             f'<a class="{"active" if view == key else ""}" href="/?view={key}">{label}</a>'
-            for key, label in (("control", "Control room"), ("agents", "Agent team"), ("activity", "Activity"))
+            for key, label in (("control", "Control room"), ("agents", "Agent team"), ("governance", "Governance"), ("activity", "Activity"))
         )
         body = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>App Evolver</title><style>{STYLE}</style></head>
         <body><header><h1>App Evolver</h1><p>Compose agents. Observe decisions. Deliver through pull requests.</p><nav class="nav">{nav}</nav></header>
@@ -100,7 +102,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return f"""
         <h2>Evolution pipeline</h2>{self._pipeline()}
         <div class="policy"><span class="pill">Observation selection: {html.escape(hitl)}</span><span class="pill">Delivery: pull request only</span><span class="pill {'off' if not remote_ready else ''}">GitHub remote: {'ready' if remote_ready else 'not configured'}</span></div>
-        <div class="toolbar"><form class="inline" method="post"><input type="hidden" name="action" value="sync"><input type="hidden" name="view" value="control"><button>Sync & triage</button></form><a class="button" href="/?view=activity">Observe agent behavior</a></div>
+        <div class="toolbar"><form class="inline" method="post"><input type="hidden" name="action" value="sync"><input type="hidden" name="view" value="control"><button>Sync & triage</button></form><a class="button" href="/?view=activity">Observe agent behavior</a><a class="button" href="/?view=governance">View governing constraints</a></div>
         <h2>Candidate observations</h2><div class="grid">{observation_cards or '<div class="empty">No observations yet. Sync the mock source to begin.</div>'}</div>
         <h2>Pull requests</h2><div class="grid">{pr_cards or '<div class="empty">No PR branches have been prepared.</div>'}</div>
         """
@@ -122,6 +124,69 @@ class DashboardHandler(BaseHTTPRequestHandler):
         <div class="row"><div><h2>Agent activity</h2><p class="muted">Inputs, outputs, status, duration, and shared run IDs make the composite observable.</p></div><div class="policy"><span class="pill">{completed} completed</span><span class="pill {'warn' if failed else 'off'}">{failed} failed</span></div></div>
         <div class="activity">{items or '<div class="empty">Run Sync & triage or prepare a PR to generate activity.</div>'}</div>
         """
+
+    def _governance_view(self) -> str:
+        constitution = self.engine.constitution
+        contract = self.engine.contract().document
+        config = self.engine.config
+        rules = "".join(f"<li>{html.escape(rule)}</li>" for rule in constitution["nonNegotiables"])
+        mutable = "".join(f'<span class="path">{html.escape(path)}</span>' for path in contract["mutablePaths"])
+        protected = "".join(f'<span class="path protected">{html.escape(path)}</span>' for path in contract["protectedPaths"])
+        validations = "".join(
+            f'<li><code>{html.escape(" ".join(command))}</code></li>'
+            for command in contract["validationCommands"]
+        )
+        capabilities = "".join(self._capability_card(name, value) for name, value in contract["capabilities"].items())
+        limit_labels = {
+            "maxChangedFiles": "Maximum changed files",
+            "validationTimeoutSeconds": "Validation timeout",
+            "maxEvidenceSamples": "Maximum evidence samples",
+        }
+        limits = "".join(
+            f'<div class="kv"><strong>{html.escape(limit_labels.get(key, key))}</strong><span>{html.escape(str(value))}{" seconds" if key == "validationTimeoutSeconds" else ""}</span></div>'
+            for key, value in constitution["limits"].items()
+        )
+        source = config["observationSource"]
+        pr = config["pullRequests"]
+        return f"""
+        <h2>Governance model</h2>
+        <p class="muted">The constitution governs every agent. The app contract narrows what may change. Repository checks validate the branch. The existing PR workflow governs delivery.</p>
+        <div class="governance-map" aria-label="Governance layers">
+          <section class="governance-layer"><span class="stage">Why</span><h3>Constitution</h3><p>Purpose, non-negotiables, HITL policy, and operating limits.</p></section>
+          <section class="governance-layer"><span class="stage">What</span><h3>Evolution contract</h3><p>Product intent, capabilities, and mutable versus protected paths.</p></section>
+          <section class="governance-layer"><span class="stage">How</span><h3>Agent team + sandbox</h3><p>Bounded roles operate in a disposable Git worktree and run repository checks.</p></section>
+          <section class="governance-layer"><span class="stage">Deliver</span><h3>Pull request</h3><p>Existing CI, branch protection, review, merge, and revert remain authoritative.</p></section>
+        </div>
+
+        <h2>Constitution</h2>
+        <div class="grid two">
+          <section class="card"><span class="pill">Purpose</span><h3>North star</h3><p>{html.escape(constitution['purpose'])}</p><p class="muted"><code>constitution.json</code> · schema {constitution['schemaVersion']}</p></section>
+          <section class="card"><span class="pill">Human control</span><h3>Observation selection</h3><p class="score">{html.escape(constitution['humanInTheLoop']['observationSelection'])}</p><p class="muted">Code changes are delivered only through the repository's pull-request controls.</p></section>
+          <section class="card"><span class="pill warn">Non-negotiable</span><h3>Rules every agent inherits</h3><ol class="rule-list">{rules}</ol></section>
+          <section class="card"><span class="pill">Operating envelope</span><h3>Limits</h3>{limits}</section>
+        </div>
+
+        <h2>App evolution contract</h2>
+        <section class="card"><span class="pill">Product intent</span><h3>{html.escape(contract['name'])}</h3><p>{html.escape(contract['productIntent'])}</p><p class="muted"><code>pet-store-app/evolution.json</code> · schema {contract['schemaVersion']}</p></section>
+        <div class="grid two">
+          <section class="card"><span class="pill">Mutable</span><h3>Agent may change</h3><div class="path-list">{mutable}</div></section>
+          <section class="card"><span class="pill warn">Protected</span><h3>Agent may not change</h3><div class="path-list">{protected}</div></section>
+        </div>
+        <h3>Grounded capabilities</h3><div class="grid two">{capabilities}</div>
+        <section class="card"><span class="pill">Required checks</span><h3>Validation commands</h3><ul>{validations}</ul></section>
+
+        <h2>Runtime and delivery</h2>
+        <div class="grid two">
+          <section class="card"><h3>Observation source</h3><div class="kv"><strong>Kind</strong><span>{html.escape(source['kind'])}</span></div><div class="kv"><strong>Path</strong><code>{html.escape(source['path'])}</code></div><div class="kv"><strong>Sandbox</strong><code>{html.escape(config['sandboxRoot'])}</code></div></section>
+          <section class="card"><h3>Pull requests</h3><div class="kv"><strong>Provider</strong><span>{html.escape(pr['provider'])}</span></div><div class="kv"><strong>Base branch</strong><code>{html.escape(pr['baseBranch'])}</code></div><div class="kv"><strong>Initial state</strong><span>{'Draft PR' if pr['draft'] else 'Ready for review'}</span></div></section>
+        </div>
+        """
+
+    @staticmethod
+    def _capability_card(name: str, capability: dict) -> str:
+        change = capability["change"]
+        value = str(change["value"]).lower() if isinstance(change["value"], bool) else str(change["value"])
+        return f"""<article class="card capability"><span class="pill">{html.escape(capability['risk'])} risk</span><h3>{html.escape(name.replace('_', ' ').title())}</h3><p>{html.escape(capability['description'])}</p><div class="kv"><strong>Success metric</strong><span>{html.escape(capability['successMetric'])}</span></div><div class="kv"><strong>Allowed change</strong><code>{html.escape(change['path'])}: {html.escape(change['key'])} = {html.escape(value)}</code></div></article>"""
 
     def _pipeline(self) -> str:
         nodes = []

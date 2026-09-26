@@ -29,6 +29,8 @@ Open <http://127.0.0.1:8100>. The control room has three views:
 
 - **Control room** selects observations and prepares checked PR branches.
 - **Agent team** enables agents and edits their names and instructions.
+- **Governance** visualizes the constitution, app evolution contract, protected
+  paths, allowed capabilities, operating limits, and PR delivery policy.
 - **Activity** shows each agent's inputs, outputs, status, run ID, and duration.
 
 When the app repository has a GitHub `origin`, App Evolver can push the checked
