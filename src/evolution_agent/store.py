@@ -4,6 +4,8 @@ import copy
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from .errors import InvalidTransition, NotFoundError
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -52,6 +54,8 @@ class InMemoryStateStore:
                     "app_id": app_id,
                     "source_id": source_id,
                     "event_type": signal["type"],
+                    "app_version": signal.get("appVersion", "unknown"),
+                    "app_revision": signal.get("appRevision", "unknown"),
                     "payload": copy.deepcopy(signal.get("payload", {})),
                     "created_at": signal.get("createdAt", now()),
                 }
@@ -103,18 +107,18 @@ class InMemoryStateStore:
     def observation(self, observation_id: int) -> dict[str, Any]:
         value = next((item for item in self._observations if item["id"] == observation_id), None)
         if not value:
-            raise ValueError(f"Observation {observation_id} does not exist")
+            raise NotFoundError(f"Observation {observation_id} does not exist")
         return copy.deepcopy(value)
 
     def set_observation_status(self, observation_id: int, status: str) -> None:
         value = next((item for item in self._observations if item["id"] == observation_id), None)
         if not value:
-            raise ValueError(f"Observation {observation_id} does not exist")
+            raise NotFoundError(f"Observation {observation_id} does not exist")
         value.update(status=status, updated_at=now())
 
     def add_pull_request(self, pull_request: dict[str, Any]) -> None:
         if any(item["id"] == pull_request["id"] for item in self._pull_requests):
-            raise ValueError(f"PR branch {pull_request['id']} already exists")
+            raise InvalidTransition(f"PR branch {pull_request['id']} already exists")
         self._pull_requests.append(copy.deepcopy(pull_request))
 
     def pull_requests(self, app_id: str | None = None) -> list[dict[str, Any]]:
@@ -126,13 +130,13 @@ class InMemoryStateStore:
     def pull_request(self, pull_request_id: str) -> dict[str, Any]:
         value = next((item for item in self._pull_requests if item["id"] == pull_request_id), None)
         if not value:
-            raise ValueError(f"PR branch {pull_request_id} does not exist")
+            raise NotFoundError(f"PR branch {pull_request_id} does not exist")
         return copy.deepcopy(value)
 
     def set_pull_request_opened(self, pull_request_id: str, number: int, url: str) -> None:
         value = next((item for item in self._pull_requests if item["id"] == pull_request_id), None)
         if not value:
-            raise ValueError(f"PR branch {pull_request_id} does not exist")
+            raise NotFoundError(f"PR branch {pull_request_id} does not exist")
         value.update(status="opened", pr_number=number, pr_url=url)
 
     def add_activity(self, activity: dict[str, Any]) -> None:

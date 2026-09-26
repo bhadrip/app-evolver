@@ -1,8 +1,18 @@
 {
   "schemaVersion": 1,
+  "workflow": {
+    "nodes": [
+      {"agentId": "signal-analyst", "dependsOn": []},
+      {"agentId": "product-manager", "dependsOn": ["signal-analyst"]},
+      {"agentId": "software-engineer", "dependsOn": ["product-manager"]},
+      {"agentId": "quality-reviewer", "dependsOn": ["software-engineer"]},
+      {"agentId": "evidence-reviewer", "dependsOn": ["software-engineer"]}
+    ]
+  },
   "agents": [
     {
       "id": "signal-analyst",
+      "kind": "signal_analyst",
       "name": "Signal Analyst",
       "stage": "Observe",
       "enabled": true,
@@ -12,6 +22,7 @@
     },
     {
       "id": "product-manager",
+      "kind": "product_manager",
       "name": "Product Manager",
       "stage": "Frame",
       "enabled": true,
@@ -21,6 +32,7 @@
     },
     {
       "id": "software-engineer",
+      "kind": "software_engineer",
       "name": "Software Engineer",
       "stage": "Implement",
       "enabled": true,
@@ -30,12 +42,23 @@
     },
     {
       "id": "quality-reviewer",
+      "kind": "quality_reviewer",
       "name": "Quality Reviewer",
       "stage": "Validate",
       "enabled": true,
       "model": "deterministic",
       "access": "read-only",
       "instructions": "Run the companion repository's existing checks, verify changed paths, and block PR creation when any required validation fails."
+    },
+    {
+      "id": "evidence-reviewer",
+      "kind": "evidence_reviewer",
+      "name": "Evidence Reviewer",
+      "stage": "Validate",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Require customer evidence, app-version provenance, code revisions, and validation output before a pull request can be proposed."
     }
   ]
 }

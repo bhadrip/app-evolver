@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
@@ -8,13 +9,20 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .contracts import AppContract
+from .errors import ConfigurationError, PolicyViolation, ValidationFailed
 
 
 class ChangeWorkspace(Protocol):
     """Execution boundary for local worktrees or future remote sandboxes."""
 
     def prepare_pull_request(
-        self, contract: AppContract, observation: dict[str, Any], constitution: dict[str, Any]
+        self,
+        contract: AppContract,
+        observation: dict[str, Any],
+        constitution: dict[str, Any],
+        *,
+        change_plan: dict[str, Any],
+        hypothesis: str,
     ) -> dict[str, Any]: ...
 
 
@@ -45,16 +53,24 @@ class LocalGitWorkspace:
         )
 
     def prepare_pull_request(
-        self, contract: AppContract, observation: dict[str, Any], constitution: dict[str, Any]
+        self,
+        contract: AppContract,
+        observation: dict[str, Any],
+        constitution: dict[str, Any],
+        *,
+        change_plan: dict[str, Any],
+        hypothesis: str,
     ) -> dict[str, Any]:
         status = self._run(["git", "status", "--porcelain"], contract.root)
         if status.returncode != 0 or status.stdout.strip():
-            raise ValueError("App working tree must be clean before preparing a PR branch")
+            raise PolicyViolation("App working tree must be clean before preparing a PR branch")
 
         capability = contract.capability(observation["theme"])
-        change = capability["change"]
+        change = change_plan
+        if change != capability["change"]:
+            raise PolicyViolation("Agent change plan does not match the grounded app capability")
         if change.get("kind") != "json_set":
-            raise ValueError(f"Unsupported grounded change operation: {change.get('kind')}")
+            raise PolicyViolation(f"Unsupported grounded change operation: {change.get('kind')}")
 
         pull_request_id = uuid.uuid4().hex[:10]
         branch = f"evolution/{pull_request_id}"
@@ -62,17 +78,17 @@ class LocalGitWorkspace:
         sandbox_path.parent.mkdir(parents=True, exist_ok=True)
         base = self._run(["git", "rev-parse", "HEAD"], contract.root)
         if base.returncode != 0:
-            raise ValueError(f"Cannot resolve app HEAD: {base.stdout.strip()}")
+            raise ConfigurationError(f"Cannot resolve app HEAD: {base.stdout.strip()}")
         base_commit = base.stdout.strip()
         created = self._run(
             ["git", "worktree", "add", "-b", branch, str(sandbox_path), base_commit], contract.root
         )
         if created.returncode != 0:
-            raise ValueError(f"Cannot create sandbox worktree: {created.stdout.strip()}")
+            raise ConfigurationError(f"Cannot create sandbox worktree: {created.stdout.strip()}")
 
         target = (sandbox_path / change["path"]).resolve()
         if sandbox_path not in target.parents:
-            raise ValueError("Grounded change escaped the sandbox")
+            raise PolicyViolation("Grounded change escaped the sandbox")
         document = json.loads(target.read_text())
         document[change["key"]] = change["value"]
         target.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
@@ -89,7 +105,7 @@ class LocalGitWorkspace:
             result = self._run([str(part) for part in command], sandbox_path, timeout=timeout)
             validation_output.append(f"$ {' '.join(command)}\n{result.stdout.strip()}")
             if result.returncode != 0:
-                raise ValueError("Validation failed:\n" + "\n\n".join(validation_output))
+                raise ValidationFailed("Validation failed:\n" + "\n\n".join(validation_output))
 
         diff = self._run(["git", "diff", "--no-ext-diff", "--"], sandbox_path).stdout
         self._run(["git", "add", "--", *changed_paths], sandbox_path)
@@ -97,16 +113,13 @@ class LocalGitWorkspace:
             ["git", "commit", "-m", f"evolve: {capability['description']}"], sandbox_path
         )
         if committed.returncode != 0:
-            raise ValueError(f"Could not commit PR branch: {committed.stdout.strip()}")
+            raise ValidationFailed(f"Could not commit PR branch: {committed.stdout.strip()}")
         proposed_commit = self._run(["git", "rev-parse", "HEAD"], sandbox_path).stdout.strip()
         return {
             "id": pull_request_id,
             "app_id": contract.app_id,
             "observation_id": observation["id"],
-            "hypothesis": (
-                f"If we {capability['description'].lower()} then the observation's affected customers "
-                f"will use it, improving {capability['successMetric']}."
-            ),
+            "hypothesis": hypothesis,
             "success_metric": capability["successMetric"],
             "risk": capability["risk"],
             "branch": branch,
@@ -115,6 +128,10 @@ class LocalGitWorkspace:
             "proposed_commit": proposed_commit,
             "diff": diff,
             "validation": "\n\n".join(validation_output),
+            "evidence": copy.deepcopy(observation["evidence"]),
+            "customer_app_versions": copy.deepcopy(
+                observation["evidence"].get("appVersions", [])
+            ),
             "status": "checks_passed",
             "pr_number": None,
             "pr_url": None,

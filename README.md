@@ -9,7 +9,7 @@ a bounded change, validate it in an isolated workspace, and open an ordinary
 pull request. It does not replace Git, CI, branch protection, review, merge, or
 revert.
 
-## Library shape
+## Python SDK
 
 ```python
 from pathlib import Path
@@ -22,9 +22,58 @@ evolver = AppEvolver(
 )
 app = evolver.register_app(Path("/absolute/path/to/my-app"))
 
-evolver.sync(app["id"])
-evolver.triage(app["id"])
+run = evolver.sync_and_analyze(app["id"])
+observations = evolver.list_observations(app["id"])
+
+# Explicit human selection when required by the app constitution.
+selected = evolver.select_observation(observations[0]["id"])
+proposal = evolver.prepare_pull_request(selected["id"])
 ```
+
+`AppEvolver` is the stable façade used by the CLI and development UI:
+
+| Concern | Public SDK methods |
+| --- | --- |
+| Applications | `register_app`, `list_apps`, `get_app`, `default_app_id` |
+| Governance | `get_governance` |
+| Agent composition | `list_agents`, `get_agent_graph`, `configure_agent_graph`, `update_agent` |
+| Observations | `sync_observations`, `analyze_observations`, `sync_and_analyze`, `list_observations`, `get_observation`, `select_observation` |
+| Pull requests | `prepare_pull_request`, `list_pull_requests`, `get_pull_request`, `can_open_pull_request`, `open_pull_request` |
+| Observability | `list_activity` |
+| Automation | `run_cycle` |
+
+Public return values have exported `TypedDict` contracts such as `AppInfo`,
+`Observation`, `PullRequestProposal`, and `GovernanceSnapshot`. Expected failures
+use exported domain errors rooted at `AppEvolverError`, including
+`PolicyViolation`, `InvalidTransition`, `ValidationFailed`, and `DeliveryError`.
+
+## Composable agents
+
+Every agent implements the transport-neutral `Agent` protocol:
+
+```python
+class Agent(Protocol):
+    @property
+    def definition(self) -> AgentDefinition: ...
+
+    def run(self, request: AgentRequest) -> AgentResponse: ...
+```
+
+`SignalAnalystAgent`, `ProductManagerAgent`, `SoftwareEngineerAgent`,
+`QualityReviewerAgent`, and `EvidenceReviewerAgent` are concrete `BaseAgent`
+subtypes. An `AgentTeam` resolves the `kind` in each agent definition through a
+type registry, so applications can
+add another subtype without changing orchestration code. Requests and responses
+use normalized, serializable envelopes. A future MCP or A2A adapter can therefore
+implement `Agent` and translate those envelopes at the boundary; App Evolver does
+not prematurely choose either transport for its core API.
+
+The agent-team document is a dependency graph. App Evolver topologically divides
+it into execution waves: agents in the same wave run in parallel; a later wave
+runs only after all of its dependencies complete. Normalized upstream payloads
+are supplied to downstream agents as `dependency_outputs`. The SDK exposes this
+resolved shape through `get_agent_graph()`, and the development UI renders the
+same graph.
 
 State and execution environments are separate concerns:
 
@@ -60,7 +109,8 @@ The repository must contain an `evolution.json` contract:
   "productIntent": "The outcome this product exists to create.",
   "observationSource": {
     "kind": "fixture",
-    "path": "evolution/observations.json"
+    "path": "evolution/observations.json",
+    "requiredProvenance": ["appVersion", "appRevision"]
   },
   "constitution": "evolution/constitution.json",
   "pullRequests": {
@@ -80,6 +130,13 @@ The repository must contain an `evolution.json` contract:
 The contract is protected: agents may read it but cannot expand their own
 authority. Contract changes require an ordinary human-reviewed PR.
 
+Every interaction signal must identify both the customer-facing `appVersion`
+and its exact Git `appRevision`. App Evolver verifies that revision exists in the
+registered app repository, preserves version counts in observation evidence, and
+includes them in the PR proposal together with the base commit, proposed commit,
+diff, and repository validation output. This keeps changes grounded in both the
+code customers actually used and the tests run against the proposed code.
+
 ## In-memory v0
 
 The following state is process-local and disappears when the process exits:
@@ -93,10 +150,37 @@ The local work directory is different: it contains temporary Git worktrees and
 other files required to run and validate an application. Configure it with
 `work_root` or `APP_EVOLVER_WORK_DIR`.
 
+## CLI
+
+The `app-evolver` CLI calls only the public Python SDK. Commands that require
+state are atomic because v0 state does not survive between CLI processes.
+
+```bash
+# Inspect the effective app contract, constitution, and platform policy.
+uv run app-evolver --app-path /absolute/path/to/my-app --json inspect
+
+# Collect mock signals and print ranked themes.
+uv run app-evolver --app-path /absolute/path/to/my-app observe
+
+# Inspect serial and parallel agent execution waves.
+uv run app-evolver graph
+
+# Human-select a theme and prepare its validated PR branch in one invocation.
+uv run app-evolver --app-path /absolute/path/to/my-app propose delivery_tracking
+
+# Start the long-lived development UI with in-memory state.
+uv run app-evolver --app-path /absolute/path/to/my-app serve
+```
+
+Use global `--json` for machine-readable output. `propose --open` opens the
+checked branch as a GitHub pull request when the companion checkout and GitHub
+CLI are configured.
+
 ## Optional development control room
 
-The repository includes a thin CLI and browser UI over the same public library.
-They are development adapters, not required runtime services.
+The repository includes a thin browser UI over the same public SDK. It has no
+direct access to the state store, registry, agent team, or workspace adapter.
+It is a development adapter, not a required runtime service.
 
 ```bash
 uv run app-evolver --app-path /absolute/path/to/my-app serve

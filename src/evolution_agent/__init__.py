@@ -1,17 +1,85 @@
 """Embeddable primitives for observation-driven application evolution."""
 
-from .agents import AgentTeam
+from .agents import (
+    Agent,
+    AgentFactory,
+    AgentRequest,
+    AgentResponse,
+    AgentTeam,
+    BaseAgent,
+    EvidenceReviewerAgent,
+    ProductManagerAgent,
+    QualityReviewerAgent,
+    SignalAnalystAgent,
+    SoftwareEngineerAgent,
+)
 from .engine import AppEvolver
+from .errors import (
+    AppEvolverError,
+    AgentExecutionError,
+    ConfigurationError,
+    DeliveryError,
+    InvalidTransition,
+    NotFoundError,
+    PolicyViolation,
+    ValidationFailed,
+)
+from .models import (
+    ActivityEntry,
+    AgentDefinition,
+    AgentGraphSnapshot,
+    AgentGraphNode,
+    AnalysisResult,
+    AppInfo,
+    AppVersionEvidence,
+    GovernanceSnapshot,
+    Observation,
+    ObservationEvidence,
+    PullRequestProposal,
+    SyncAndAnalyzeResult,
+    SyncResult,
+)
 from .registry import AppRegistry
 from .sandbox import ChangeWorkspace, LocalGitWorkspace
 from .store import InMemoryStateStore, StateStore
 
 __all__ = [
     "AgentTeam",
+    "Agent",
+    "AgentFactory",
+    "AgentRequest",
+    "AgentResponse",
+    "ActivityEntry",
+    "AgentDefinition",
+    "AgentGraphSnapshot",
+    "AgentGraphNode",
+    "AnalysisResult",
+    "AppEvolverError",
+    "AgentExecutionError",
     "AppEvolver",
     "AppRegistry",
+    "AppInfo",
+    "AppVersionEvidence",
+    "BaseAgent",
     "ChangeWorkspace",
+    "ConfigurationError",
+    "DeliveryError",
+    "EvidenceReviewerAgent",
+    "GovernanceSnapshot",
     "InMemoryStateStore",
+    "InvalidTransition",
     "LocalGitWorkspace",
+    "NotFoundError",
+    "Observation",
+    "ObservationEvidence",
+    "PolicyViolation",
+    "ProductManagerAgent",
+    "PullRequestProposal",
+    "QualityReviewerAgent",
+    "SignalAnalystAgent",
+    "SoftwareEngineerAgent",
     "StateStore",
+    "SyncAndAnalyzeResult",
+    "SyncResult",
+    "ValidationFailed",
 ]

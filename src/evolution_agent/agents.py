@@ -1,37 +1,281 @@
+"""Composable agent protocol and built-in deterministic implementations."""
+
 from __future__ import annotations
 
 import copy
 import json
+from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
+
+from .errors import AgentExecutionError, ConfigurationError, NotFoundError, ValidationFailed
+from .models import AgentDefinition, AgentGraphNode, AgentGraphSnapshot
+from .triage import group_signals
+
+
+@dataclass(frozen=True)
+class AgentRequest:
+    """Transport-neutral input envelope suitable for local, MCP, or A2A adapters."""
+
+    run_id: str
+    app_id: str
+    task: str
+    payload: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class AgentResponse:
+    """Normalized agent output consumed by App Evolver orchestration."""
+
+    agent_id: str
+    summary: str
+    payload: Mapping[str, Any]
+
+
+@runtime_checkable
+class Agent(Protocol):
+    """Contract every local or remote App Evolver agent must implement."""
+
+    @property
+    def definition(self) -> AgentDefinition: ...
+
+    def run(self, request: AgentRequest) -> AgentResponse: ...
+
+
+AgentFactory = Callable[[AgentDefinition], Agent]
+
+
+class BaseAgent(ABC):
+    """Convenience base type for built-in and user-defined in-process agents."""
+
+    task: str
+
+    def __init__(self, definition: AgentDefinition):
+        self._definition = copy.deepcopy(definition)
+
+    @property
+    def definition(self) -> AgentDefinition:
+        return copy.deepcopy(self._definition)
+
+    def run(self, request: AgentRequest) -> AgentResponse:
+        if request.task != self.task:
+            raise ConfigurationError(
+                f"Agent {self._definition['id']} handles {self.task}, not {request.task}"
+            )
+        payload, summary = self.execute(copy.deepcopy(dict(request.payload)))
+        return AgentResponse(
+            agent_id=self._definition["id"], summary=summary, payload=copy.deepcopy(payload)
+        )
+
+    @abstractmethod
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """Execute one role-specific task using a serializable payload."""
+
+
+class SignalAnalystAgent(BaseAgent):
+    task = "analyze_signals"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        themes = group_signals(
+            payload["signals"], payload["capabilities"], int(payload["max_samples"])
+        )
+        return {"themes": themes}, f"Produced {len(themes)} ranked opportunity themes"
+
+
+class ProductManagerAgent(BaseAgent):
+    task = "frame_hypothesis"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        capability = payload["capability"]
+        hypothesis = (
+            f"If we {capability['description'].lower()} then customers expressing this need "
+            f"will use it, improving {capability['successMetric']}."
+        )
+        return {"hypothesis": hypothesis}, f"Hypothesis: {hypothesis}"
+
+
+class SoftwareEngineerAgent(BaseAgent):
+    task = "plan_grounded_change"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        capability = payload["capability"]
+        plan = copy.deepcopy(capability["change"])
+        return {"change": plan}, f"Planned {plan['kind']} change in {plan['path']}"
+
+
+class QualityReviewerAgent(BaseAgent):
+    task = "review_validated_change"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        if payload["status"] != "checks_passed":
+            raise ValidationFailed(f"Reviewer rejected workspace status: {payload['status']}")
+        return {"approved": True}, "All repository checks passed; branch is ready for a PR"
+
+
+class EvidenceReviewerAgent(BaseAgent):
+    task = "review_evidence"
+
+    def execute(self, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        evidence = payload["evidence"]
+        if not evidence.get("samples") or not evidence.get("appVersions"):
+            raise ValidationFailed("PR evidence must include samples and customer app versions")
+        return {"approved": True}, "Evidence includes customer signals and app-version provenance"
+
+
+BUILT_IN_AGENT_TYPES: dict[str, AgentFactory] = {
+    "signal_analyst": SignalAnalystAgent,
+    "product_manager": ProductManagerAgent,
+    "software_engineer": SoftwareEngineerAgent,
+    "quality_reviewer": QualityReviewerAgent,
+    "evidence_reviewer": EvidenceReviewerAgent,
+}
 
 
 class AgentTeam:
-    """Process-local composite-agent configuration for v0."""
+    """Composable process-local agent registry for v0."""
 
-    def __init__(self, document: dict[str, Any]):
+    def __init__(
+        self,
+        document: dict[str, Any],
+        agent_types: Mapping[str, AgentFactory] | None = None,
+    ):
         self._document = copy.deepcopy(document)
+        self._agent_types = dict(BUILT_IN_AGENT_TYPES)
+        if agent_types:
+            self._agent_types.update(agent_types)
+        self._instances: dict[str, Agent] = {}
+        self._rebuild()
 
     @classmethod
-    def from_path(cls, path: Path) -> "AgentTeam":
-        return cls(json.loads(path.read_text()))
+    def from_path(
+        cls,
+        path: Path,
+        agent_types: Mapping[str, AgentFactory] | None = None,
+    ) -> "AgentTeam":
+        return cls(json.loads(path.read_text()), agent_types=agent_types)
 
     def document(self) -> dict[str, Any]:
         return copy.deepcopy(self._document)
 
-    def all(self) -> list[dict[str, Any]]:
+    def all(self) -> list[AgentDefinition]:
         return copy.deepcopy(self._document["agents"])
 
-    def enabled(self) -> list[dict[str, Any]]:
+    def enabled(self) -> list[AgentDefinition]:
         return [agent for agent in self.all() if agent["enabled"]]
 
-    def get(self, agent_id: str, require_enabled: bool = False) -> dict[str, Any]:
-        agent = next((item for item in self._document["agents"] if item["id"] == agent_id), None)
-        if not agent:
-            raise ValueError(f"Unknown agent: {agent_id}")
-        if require_enabled and not agent["enabled"]:
-            raise ValueError(f"{agent['name']} is disabled")
-        return copy.deepcopy(agent)
+    def graph(self) -> AgentGraphSnapshot:
+        nodes = copy.deepcopy(self._document.get("workflow", {}).get("nodes", []))
+        return {"nodes": nodes, "waves": self.execution_waves()}
+
+    def configure_graph(self, nodes: list[AgentGraphNode]) -> AgentGraphSnapshot:
+        previous = copy.deepcopy(self._document.get("workflow"))
+        self._document["workflow"] = {"nodes": copy.deepcopy(nodes)}
+        try:
+            self.execution_waves()
+        except Exception:
+            if previous is None:
+                self._document.pop("workflow", None)
+            else:
+                self._document["workflow"] = previous
+            raise
+        return self.graph()
+
+    def execution_waves(self, agent_ids: set[str] | None = None) -> list[list[str]]:
+        """Topologically group agents; members of one wave may run in parallel."""
+        known = {definition["id"] for definition in self._document["agents"]}
+        nodes = self._document.get("workflow", {}).get("nodes", [])
+        if not nodes:
+            nodes = [{"agentId": definition["id"], "dependsOn": []} for definition in self.all()]
+        selected = known if agent_ids is None else set(agent_ids)
+        unknown = selected - known
+        if unknown:
+            raise ConfigurationError(f"Workflow references unknown agents: {', '.join(sorted(unknown))}")
+        dependencies: dict[str, set[str]] = {}
+        for node in nodes:
+            agent_id = node["agentId"]
+            if agent_id not in known:
+                raise ConfigurationError(f"Workflow node references unknown agent: {agent_id}")
+            unknown_dependencies = set(node.get("dependsOn", [])) - known
+            if unknown_dependencies:
+                raise ConfigurationError(
+                    f"Workflow node {agent_id} has unknown dependencies: "
+                    + ", ".join(sorted(unknown_dependencies))
+                )
+            if agent_id in selected:
+                dependencies[agent_id] = set(node.get("dependsOn", [])) & selected
+        missing_nodes = selected - dependencies.keys()
+        if missing_nodes:
+            raise ConfigurationError(
+                f"Workflow has no nodes for agents: {', '.join(sorted(missing_nodes))}"
+            )
+        waves: list[list[str]] = []
+        completed: set[str] = set()
+        while len(completed) < len(selected):
+            wave = sorted(
+                agent_id for agent_id, required in dependencies.items()
+                if agent_id not in completed and required <= completed
+            )
+            if not wave:
+                raise ConfigurationError("Agent workflow contains a dependency cycle")
+            waves.append(wave)
+            completed.update(wave)
+        return waves
+
+    def run_composite(
+        self, requests: Mapping[str, AgentRequest]
+    ) -> dict[str, AgentResponse]:
+        """Execute independent agents in parallel and dependency waves in series."""
+        responses: dict[str, AgentResponse] = {}
+        configured_dependencies = {
+            node["agentId"]: list(node.get("dependsOn", []))
+            for node in self._document.get("workflow", {}).get("nodes", [])
+        }
+        for wave in self.execution_waves(set(requests)):
+            with ThreadPoolExecutor(max_workers=max(1, len(wave))) as executor:
+                futures = {}
+                for agent_id in wave:
+                    request = requests[agent_id]
+                    payload = copy.deepcopy(dict(request.payload))
+                    payload["dependency_outputs"] = {
+                        dependency: copy.deepcopy(dict(responses[dependency].payload))
+                        for dependency in configured_dependencies.get(agent_id, [])
+                        if dependency in responses
+                    }
+                    enriched = AgentRequest(
+                        run_id=request.run_id,
+                        app_id=request.app_id,
+                        task=request.task,
+                        payload=payload,
+                    )
+                    futures[agent_id] = executor.submit(
+                        self.get_agent(agent_id, require_enabled=True).run, enriched
+                    )
+                for agent_id, future in futures.items():
+                    try:
+                        responses[agent_id] = future.result()
+                    except Exception as error:
+                        raise AgentExecutionError(agent_id, error) from error
+        return responses
+
+    def get_definition(self, agent_id: str, require_enabled: bool = False) -> AgentDefinition:
+        definition = next(
+            (item for item in self._document["agents"] if item["id"] == agent_id), None
+        )
+        if not definition:
+            raise NotFoundError(f"Unknown agent: {agent_id}")
+        if require_enabled and not definition["enabled"]:
+            raise ConfigurationError(f"{definition['name']} is disabled")
+        return copy.deepcopy(definition)
+
+    def get_agent(self, agent_id: str, require_enabled: bool = False) -> Agent:
+        self.get_definition(agent_id, require_enabled=require_enabled)
+        return self._instances[agent_id]
+
+    # Compatibility alias for the initial configuration-only API.
+    def get(self, agent_id: str, require_enabled: bool = False) -> AgentDefinition:
+        return self.get_definition(agent_id, require_enabled=require_enabled)
 
     def update(
         self,
@@ -44,15 +288,35 @@ class AgentTeam:
     ) -> None:
         agent = next((item for item in self._document["agents"] if item["id"] == agent_id), None)
         if not agent:
-            raise ValueError(f"Unknown agent: {agent_id}")
+            raise NotFoundError(f"Unknown agent: {agent_id}")
         clean_name = name.strip()[:80]
         clean_model = model.strip()[:80]
         clean_instructions = instructions.strip()[:2_000]
         if not clean_name or not clean_model or not clean_instructions:
-            raise ValueError("Name, model, and instructions are required")
+            raise ConfigurationError("Name, model, and instructions are required")
         agent.update(
             name=clean_name,
             enabled=enabled,
             model=clean_model,
             instructions=clean_instructions,
         )
+        self._instances[agent_id] = self._instantiate(agent)
+
+    def _rebuild(self) -> None:
+        self._instances = {
+            definition["id"]: self._instantiate(definition)
+            for definition in self._document["agents"]
+        }
+        self.execution_waves()
+
+    def _instantiate(self, definition: AgentDefinition) -> Agent:
+        kind = definition.get("kind")
+        agent_type = self._agent_types.get(str(kind))
+        if not agent_type:
+            raise ConfigurationError(
+                f"Agent {definition['id']} references unknown agent kind: {kind}"
+            )
+        instance = agent_type(copy.deepcopy(definition))
+        if not isinstance(instance, Agent):
+            raise ConfigurationError(f"Agent kind {kind} does not implement the Agent protocol")
+        return instance

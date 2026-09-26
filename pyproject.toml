@@ -21,4 +21,4 @@ app_evolver = "src/evolution_agent"
 "app_evolver.resources.defaults" = "src/evolution_agent/resources/defaults"
 
 [tool.setuptools.package-data]
-"app_evolver" = ["resources/*.json", "resources/defaults/*.json"]
+"app_evolver" = ["py.typed", "resources/*.json", "resources/defaults/*.json"]

@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .engine import Engine
+from .engine import AppEvolver
 
 
 STYLE = """
@@ -17,15 +17,15 @@ main{width:min(1180px,90vw);margin:34px auto 80px}.toolbar,.policy,.actions{disp
 .app-picker label{display:flex;align-items:center;gap:10px;font-weight:750}.app-picker select{border:1px solid #aebbb5;border-radius:10px;padding:9px 12px;background:white;color:var(--ink);font:inherit}
 h2{font-family:Georgia,serif;font-size:1.8rem;margin:42px 0 16px}h3{margin:10px 0 6px}.grid{display:grid;gap:15px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 10px 30px #173d3208}.row{display:flex;justify-content:space-between;gap:20px;align-items:start}.muted{color:var(--muted)}.score{font-size:1.4rem;font-weight:800}
 button,.button{display:inline-block;background:var(--green);color:white;border:0;border-radius:99px;padding:10px 15px;font:inherit;font-weight:750;cursor:pointer;text-decoration:none}button.secondary{background:white;color:var(--ink);border:1px solid #9baba4}button:disabled{cursor:not-allowed;opacity:.48}form.inline{display:inline}.field{display:grid;gap:6px;margin-top:14px}.field label{font-weight:750}.field input,.field textarea{width:100%;border:1px solid #aebbb5;border-radius:10px;padding:10px 12px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:105px;resize:vertical}.check{display:flex;gap:9px;align-items:center;margin:14px 0}.check input{width:18px;height:18px}
-pre{white-space:pre-wrap;overflow:auto;background:#15241f;color:#d8f3e8;padding:16px;border-radius:12px;max-height:360px}.error,.success,.note{padding:14px;border-radius:12px}.error{background:var(--bad);border:1px solid #d88870}.success{background:var(--green-soft);border:1px solid #8bab63}.note{background:var(--warn);border:1px solid #d9b96f}.pipeline{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 10px}.agent-node{min-width:190px;flex:1;background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.agent-node.disabled{opacity:.5}.connector{display:grid;place-items:center;min-width:34px;color:var(--green);font-size:1.4rem}.agent-node .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.agent-node p{color:var(--muted);font-size:.86rem;margin:6px 0 0}
+pre{white-space:pre-wrap;overflow:auto;background:#15241f;color:#d8f3e8;padding:16px;border-radius:12px;max-height:360px}.error,.success,.note{padding:14px;border-radius:12px}.error{background:var(--bad);border:1px solid #d88870}.success{background:var(--green-soft);border:1px solid #8bab63}.note{background:var(--warn);border:1px solid #d9b96f}.pipeline{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 10px}.agent-wave{display:flex;gap:8px;padding:7px;border:1px dashed #aac0b7;border-radius:16px;position:relative}.agent-wave.parallel:before{content:"parallel";position:absolute;top:-10px;right:10px;background:var(--green-soft);padding:2px 7px;border-radius:99px;font-size:.66rem;font-weight:800}.agent-node{min-width:190px;flex:1;background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.agent-node.disabled{opacity:.5}.connector{display:grid;place-items:center;min-width:34px;color:var(--green);font-size:1.4rem}.agent-node .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.agent-node p{color:var(--muted);font-size:.86rem;margin:6px 0 0}
 .activity{position:relative;padding-left:28px}.activity:before{content:"";position:absolute;left:8px;top:10px;bottom:10px;width:2px;background:var(--line)}.activity-item{position:relative;background:white;border-bottom:1px solid var(--line);padding:14px 16px;margin-bottom:10px;border-radius:12px}.activity-item:before{content:"";position:absolute;left:-25px;top:21px;width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px #f4f3ed}.activity-item.failed:before{background:#b84932}.activity-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}.io{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}.io p{margin:4px 0}.empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed #aebbb5;border-radius:14px}details{margin-top:12px}summary{cursor:pointer;font-weight:700}
 .governance-map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}.governance-layer{background:white;border:1px solid var(--line);border-radius:14px;padding:18px;position:relative}.governance-layer:not(:last-child):after{content:"→";position:absolute;right:-20px;top:50%;transform:translateY(-50%);color:var(--green);font-size:1.4rem;z-index:1}.governance-layer .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.rule-list{margin:0;padding-left:20px}.rule-list li{margin:0 0 10px}.path-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.path{font-family:ui-monospace,SFMono-Regular,monospace;background:#edf0ed;padding:5px 8px;border-radius:7px;font-size:.85rem}.path.protected{background:#f8e5df}.capability{border-left:4px solid var(--green)}.kv{display:grid;grid-template-columns:minmax(130px,.4fr) 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}.kv:last-child{border-bottom:0}.kv strong{color:var(--muted)}
-@media(max-width:760px){.grid.two,.io,.governance-map{grid-template-columns:1fr}.row{flex-direction:column}.pipeline{flex-direction:column;overflow:visible}.connector{transform:rotate(90deg);min-height:30px}.agent-node{min-width:0}.nav{overflow:auto}.governance-layer:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-23px;transform:translateX(50%)}}
+@media(max-width:760px){.grid.two,.io,.governance-map{grid-template-columns:1fr}.row{flex-direction:column}.pipeline,.agent-wave{flex-direction:column;overflow:visible}.connector{transform:rotate(90deg);min-height:30px}.agent-node{min-width:0}.nav{overflow:auto}.governance-layer:not(:last-child):after{content:"↓";right:50%;top:auto;bottom:-23px;transform:translateX(50%)}}
 """
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
-    engine: Engine
+    engine: AppEvolver
     notice = ""
     error = ""
 
@@ -38,15 +38,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if view not in {"control", "agents", "governance", "activity"}:
             view = "control"
         message = self._message()
-        apps = self.engine.registry.all()
-        app_id = query.get("app", [self.engine.registry.default_app_id() or ""])[0]
+        apps = self.engine.list_apps()
+        app_id = query.get("app", [self.engine.default_app_id() or ""])[0]
         if not apps:
             content = self._registration_view()
             app_context = "No companion app registered"
         else:
             try:
-                app = self.engine.registry.get(app_id)
-            except ValueError:
+                app = self.engine.get_app(app_id)
+            except Exception:
                 app = apps[0]
                 app_id = app["id"]
             content = {
@@ -87,21 +87,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 app_id = app["id"]
                 self.__class__.notice = f"Registered {app['name']}."
             elif action == "sync":
-                count = self.engine.sync(app_id)
-                observations = self.engine.triage(app_id)
-                self.__class__.notice = f"Synced {count} new signals; {len(observations)} opportunity themes are ready."
+                result = self.engine.sync_and_analyze(app_id)
+                self.__class__.notice = f"Synced {result['inserted']} new signals; {len(result['observation_ids'])} opportunity themes are ready."
             elif action == "select":
                 observation_id = int(values["observation_id"][0])
-                self.engine.select(observation_id)
+                self.engine.select_observation(observation_id)
                 self.__class__.notice = f"Selected observation {observation_id}."
             elif action == "prepare_pr":
                 pull_request = self.engine.prepare_pull_request(int(values["observation_id"][0]))
                 self.__class__.notice = f"{pull_request['branch']} passed checks and is ready to open as a PR."
             elif action == "open_pr":
-                url = self.engine.open_pull_request(values["pull_request_id"][0])
-                self.__class__.notice = f"Opened pull request: {url}"
+                pull_request = self.engine.open_pull_request(values["pull_request_id"][0])
+                self.__class__.notice = f"Opened pull request: {pull_request['pr_url']}"
             elif action == "save_agent":
-                self.engine.agents.update(
+                self.engine.update_agent(
                     values["agent_id"][0],
                     name=values["name"][0],
                     enabled=values.get("enabled", [""])[0] == "on",
@@ -119,12 +118,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _control_view(self, app_id: str) -> str:
-        observations = self.engine.store.observations(app_id)
-        pull_requests = self.engine.store.pull_requests(app_id)
+        observations = self.engine.list_observations(app_id)
+        pull_requests = self.engine.list_pull_requests(app_id)
         observation_cards = "".join(self._observation_card(item) for item in observations)
         pr_cards = "".join(self._pull_request_card(item) for item in pull_requests)
-        hitl = self.engine.constitution(app_id)["humanInTheLoop"]["observationSelection"]
-        remote_ready = self.engine.pull_request_remote_ready(app_id)
+        hitl = self.engine.get_governance(app_id)["constitution"]["humanInTheLoop"]["observationSelection"]
+        remote_ready = self.engine.can_open_pull_request(app_id)
         return f"""
         <h2>Evolution pipeline</h2>{self._pipeline()}
         <div class="policy"><span class="pill">Observation selection: {html.escape(hitl)}</span><span class="pill">Delivery: pull request only</span><span class="pill {'off' if not remote_ready else ''}">GitHub remote: {'ready' if remote_ready else 'not configured'}</span></div>
@@ -134,7 +133,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """
 
     def _agents_view(self, app_id: str) -> str:
-        cards = "".join(self._agent_editor(agent, app_id) for agent in self.engine.agents.all())
+        cards = "".join(self._agent_editor(agent, app_id) for agent in self.engine.list_agents())
         return f"""
         <h2>Agent composition</h2>{self._pipeline()}
         <p class="note">This prototype uses deterministic adapters. Names, instructions, and enabled state apply to the current in-memory session; model-backed adapters can later consume the same configuration without changing the orchestration or PR workflow.</p>
@@ -142,7 +141,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """
 
     def _activity_view(self, app_id: str) -> str:
-        activities = self.engine.store.activities(app_id=app_id)
+        activities = self.engine.list_activity(app_id)
         items = "".join(self._activity_item(item) for item in activities)
         completed = sum(item["status"] == "completed" for item in activities)
         failed = sum(item["status"] == "failed" for item in activities)
@@ -152,9 +151,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         """
 
     def _governance_view(self, app_id: str) -> str:
-        constitution = self.engine.constitution(app_id)
-        contract = self.engine.contract(app_id).document
-        platform_policy = self.engine.platform_policy
+        governance = self.engine.get_governance(app_id)
+        constitution = governance["constitution"]
+        contract = governance["contract"]
+        platform_policy = governance["platform_policy"]
         rules = "".join(f"<li>{html.escape(rule)}</li>" for rule in constitution["nonNegotiables"])
         mutable = "".join(f'<span class="path">{html.escape(path)}</span>' for path in contract["mutablePaths"])
         protected = "".join(f'<span class="path protected">{html.escape(path)}</span>' for path in contract["protectedPaths"])
@@ -203,7 +203,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         <h2>Runtime and delivery</h2>
         <div class="grid two">
-          <section class="card"><h3>Observation source</h3><div class="kv"><strong>Kind</strong><span>{html.escape(source['kind'])}</span></div><div class="kv"><strong>Path</strong><code>{html.escape(source['path'])}</code></div><div class="kv"><strong>Ownership</strong><span>Companion app repository</span></div></section>
+          <section class="card"><h3>Observation source</h3><div class="kv"><strong>Kind</strong><span>{html.escape(source['kind'])}</span></div><div class="kv"><strong>Path</strong><code>{html.escape(source['path'])}</code></div><div class="kv"><strong>Required provenance</strong><span>{html.escape(', '.join(source.get('requiredProvenance', ['appVersion', 'appRevision'])))}</span></div><div class="kv"><strong>Ownership</strong><span>Companion app repository</span></div></section>
           <section class="card"><h3>Pull requests</h3><div class="kv"><strong>Provider</strong><span>{html.escape(pr['provider'])}</span></div><div class="kv"><strong>Base branch</strong><code>{html.escape(pr['baseBranch'])}</code></div><div class="kv"><strong>Initial state</strong><span>{'Draft PR' if pr['draft'] else 'Ready for review'}</span></div></section>
         </div>
         <h2>App Evolver platform policy</h2>
@@ -222,13 +222,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _pipeline(self) -> str:
         nodes = []
-        for index, agent in enumerate(self.engine.agents.all()):
+        agents = {agent["id"]: agent for agent in self.engine.list_agents()}
+        for index, wave in enumerate(self.engine.get_agent_graph()["waves"]):
             if index:
                 nodes.append('<div class="connector" aria-hidden="true">→</div>')
-            state = "enabled" if agent["enabled"] else "disabled"
-            nodes.append(
-                f'<div class="agent-node {"" if agent["enabled"] else "disabled"}"><span class="stage">{html.escape(agent["stage"])}</span><h3>{html.escape(agent["name"])}</h3><span class="pill {"" if agent["enabled"] else "off"}">{state}</span><p>{html.escape(agent["access"])}</p></div>'
-            )
+            wave_nodes = []
+            for agent_id in wave:
+                agent = agents[agent_id]
+                state = "enabled" if agent["enabled"] else "disabled"
+                wave_nodes.append(
+                    f'<div class="agent-node {"" if agent["enabled"] else "disabled"}"><span class="stage">{html.escape(agent["stage"])}</span><h3>{html.escape(agent["name"])}</h3><span class="pill {"" if agent["enabled"] else "off"}">{state}</span><p>{html.escape(agent["kind"])} · {html.escape(agent["access"])}</p></div>'
+                )
+            parallel = " parallel" if len(wave) > 1 else ""
+            nodes.append(f'<div class="agent-wave{parallel}">{"".join(wave_nodes)}</div>')
         nodes.append('<div class="connector" aria-hidden="true">→</div><div class="agent-node"><span class="stage">Deliver</span><h3>Pull request</h3><span class="pill">existing primitive</span><p>CI · review · merge · revert</p></div>')
         return f'<div class="pipeline" aria-label="Configured agent pipeline">{"".join(nodes)}</div>'
 
@@ -240,10 +246,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif item["status"] == "selected":
             actions = self._button("prepare_pr", "Prepare PR branch", app_id=item["app_id"], observation_id=item["id"])
         samples = "".join(f"<li>{html.escape(str(value))}</li>" for value in evidence.get("samples", []))
-        return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['theme'].replace('_', ' ').title())}</h3><p>{html.escape(item['summary'])}</p><details><summary>Evidence</summary><ul>{samples}</ul></details></div><div><div class="score">{item['score']:.0f}</div><p class="muted">signals</p>{actions}</div></div></article>"""
+        versions = "".join(
+            f'<li><code>{html.escape(value["version"])}</code> at <code>{html.escape(value["revision"][:12])}</code> · {value["signalCount"]} signal(s)</li>'
+            for value in evidence.get("appVersions", [])
+        )
+        return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['theme'].replace('_', ' ').title())}</h3><p>{html.escape(item['summary'])}</p><details><summary>Evidence and customer app versions</summary><ul>{samples}</ul><h4>Observed versions</h4><ul>{versions}</ul></details></div><div><div class="score">{item['score']:.0f}</div><p class="muted">signals</p>{actions}</div></div></article>"""
 
     def _pull_request_card(self, item: dict) -> str:
-        remote_ready = self.engine.pull_request_remote_ready(item["app_id"])
+        remote_ready = self.engine.can_open_pull_request(item["app_id"])
         if item["pr_url"]:
             action = f'<a class="button" href="{html.escape(item["pr_url"])}">View PR #{item["pr_number"]}</a>'
         elif remote_ready:
@@ -254,7 +264,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _agent_editor(self, agent: dict, app_id: str) -> str:
         checked = " checked" if agent["enabled"] else ""
-        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
+        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['kind'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
 
     def _activity_item(self, item: dict) -> str:
         return f"""<article class="activity-item {html.escape(item['status'])}"><div class="activity-head"><div><span class="pill">{html.escape(item['stage'])}</span><strong> {html.escape(item['agent_name'])}</strong></div><span class="muted">run {html.escape(item['run_id'])} · {item['duration_ms']} ms</span></div><div class="io"><div><strong>Input</strong><p>{html.escape(item['input_summary'])}</p></div><div><strong>Output · {html.escape(item['status'])}</strong><p>{html.escape(item['output_summary'])}</p></div></div></article>"""
@@ -280,8 +290,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         print(f"app-evolver: {format % args}")
 
 
-def serve(host: str = "127.0.0.1", port: int = 8100, engine: Engine | None = None) -> None:
-    DashboardHandler.engine = engine or Engine()
+def serve(
+    host: str = "127.0.0.1", port: int = 8100, evolver: AppEvolver | None = None
+) -> None:
+    DashboardHandler.engine = evolver or AppEvolver()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     print(f"App Evolver is running at http://{host}:{port}")
     server.serve_forever()
