@@ -10,8 +10,8 @@ def print_state(engine: Engine) -> None:
     print("Observations")
     for item in engine.store.observations():
         print(f"  {item['id']:>3}  {item['status']:<10} score={item['score']:.0f}  {item['theme']}: {item['summary']}")
-    print("Proposals")
-    for item in engine.store.proposals():
+    print("Pull requests")
+    for item in engine.store.pull_requests():
         print(f"  {item['id']}  {item['status']:<10} risk={item['risk']}  observation={item['observation_id']}")
 
 
@@ -20,12 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ("init", "sync", "triage", "list", "cycle", "serve"):
         subparsers.add_parser(name)
-    for name in ("select", "propose"):
+    for name in ("select", "prepare-pr"):
         command = subparsers.add_parser(name)
         command.add_argument("observation_id", type=int)
-    for name in ("approve", "reject", "apply"):
-        command = subparsers.add_parser(name)
-        command.add_argument("proposal_id")
+    command = subparsers.add_parser("open-pr")
+    command.add_argument("pull_request_id")
     return parser
 
 
@@ -43,19 +42,12 @@ def main() -> None:
     elif args.command == "select":
         engine.select(args.observation_id)
         print(f"Selected observation {args.observation_id}.")
-    elif args.command == "propose":
-        proposal = engine.propose(args.observation_id)
-        print(f"Created validated proposal {proposal['id']} in {proposal['sandbox_path']}")
-        print(proposal["diff"])
-    elif args.command == "approve":
-        engine.approve(args.proposal_id)
-        print(f"Approved proposal {args.proposal_id}.")
-    elif args.command == "reject":
-        engine.reject(args.proposal_id)
-        print(f"Rejected proposal {args.proposal_id}.")
-    elif args.command == "apply":
-        rollback = engine.apply(args.proposal_id)
-        print(f"Applied proposal {args.proposal_id}. Rollback commit: {rollback}")
+    elif args.command == "prepare-pr":
+        pull_request = engine.prepare_pull_request(args.observation_id)
+        print(f"Prepared checked branch {pull_request['branch']} in {pull_request['sandbox_path']}")
+        print(pull_request["diff"])
+    elif args.command == "open-pr":
+        print(engine.open_pull_request(args.pull_request_id))
     elif args.command == "cycle":
         print(engine.cycle())
     elif args.command == "serve":

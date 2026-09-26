@@ -2,14 +2,14 @@
 
 **App Evolver** is a small, auditable prototype of an observation-driven product
 team. It turns observation signals into candidate improvements while enforcing
-structure, direction, and safe boundaries. It groups signals into candidate
-observations, proposes a bounded change in an isolated Git worktree, validates the
-change, and optionally waits for human decisions at two gates.
+structure, direction, and safe boundaries. A configurable team of agents groups
+signals, frames a hypothesis, prepares a bounded change in an isolated Git
+worktree, validates it, and opens an ordinary pull request.
 
 It deliberately uses a deterministic planner. That makes the first end-to-end
 loop reproducible and proves the control plane before an LLM is allowed to write
-code. A model-backed planner can later produce patches under the same sandbox,
-constitution, validation, and approval controls.
+code. Model-backed agents can later operate under the same sandbox, constitution,
+validation, and pull-request controls.
 
 ## Quick start with mock observations
 
@@ -25,11 +25,17 @@ python3 -m src.evolution_agent.cli triage
 python3 -m src.evolution_agent.cli serve
 ```
 
-Open <http://127.0.0.1:8100>. Select an observation, create a proposal, inspect
-its evidence and diff, approve it, and apply it. Refresh the pet store to see the
-new capability.
+Open <http://127.0.0.1:8100>. The control room has three views:
 
-To view the store before or after applying a proposal, use another terminal:
+- **Control room** selects observations and prepares checked PR branches.
+- **Agent team** enables agents and edits their names and instructions.
+- **Activity** shows each agent's inputs, outputs, status, run ID, and duration.
+
+When the app repository has a GitHub `origin`, App Evolver can push the checked
+branch and open a draft PR. CI, review, merge, and revert remain normal repository
+operations; App Evolver does not replace them.
+
+To view the store, use another terminal:
 
 ```bash
 cd ../pet-store-app
@@ -41,20 +47,22 @@ The same workflow is available from the CLI:
 ```bash
 python3 -m src.evolution_agent.cli list
 python3 -m src.evolution_agent.cli select 1
-python3 -m src.evolution_agent.cli propose 1
-python3 -m src.evolution_agent.cli approve <proposal-id>
-python3 -m src.evolution_agent.cli apply <proposal-id>
+python3 -m src.evolution_agent.cli prepare-pr 1
+python3 -m src.evolution_agent.cli open-pr <branch-id>
 ```
 
-## Human-in-the-loop modes
+## Agent composition and human-in-the-loop
 
-[`constitution.json`](constitution.json) starts with both gates set to
-`required`. Change either gate to `automatic` to let `cycle` progress through it:
+[`agents.json`](agents.json) defines the composite agent team. The same settings
+are editable in the Agent team UI. The deterministic prototype persists agent
+instructions but does not claim to execute them through a model yet.
+
+[`constitution.json`](constitution.json) starts with observation selection set to
+`required`. Set it to `automatic` to let `cycle` pick the highest-ranked candidate:
 
 ```json
 "humanInTheLoop": {
-  "observationSelection": "automatic",
-  "changeApproval": "automatic"
+  "observationSelection": "automatic"
 }
 ```
 
@@ -62,8 +70,8 @@ python3 -m src.evolution_agent.cli apply <proposal-id>
 python3 -m src.evolution_agent.cli cycle
 ```
 
-Automatic approval only applies to risk levels explicitly listed in the
-constitution. Manual commands remain available in either mode.
+The cycle stops at a checked branch. Opening, reviewing, and merging a PR always
+uses the repository's existing Git and GitHub primitives.
 
 ## Onboarding an existing app
 

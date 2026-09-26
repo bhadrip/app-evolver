@@ -1,6 +1,12 @@
 {
   "stateDatabase": "var/feedback-agent.db",
   "sandboxRoot": "var/sandboxes",
+  "agentTeam": "agents.json",
+  "pullRequests": {
+    "provider": "github",
+    "baseBranch": "main",
+    "draft": true
+  },
   "observationSource": {
     "kind": "fixture",
     "path": "mock-data/observations.json"

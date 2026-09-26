@@ -63,7 +63,62 @@ class StateStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(observation_id) REFERENCES observations(id)
                 );
+                CREATE TABLE IF NOT EXISTS pull_requests (
+                    id TEXT PRIMARY KEY,
+                    app_id TEXT NOT NULL,
+                    observation_id INTEGER NOT NULL,
+                    hypothesis TEXT NOT NULL,
+                    success_metric TEXT NOT NULL,
+                    risk TEXT NOT NULL,
+                    branch TEXT NOT NULL,
+                    sandbox_path TEXT NOT NULL,
+                    base_commit TEXT NOT NULL,
+                    proposed_commit TEXT NOT NULL,
+                    diff TEXT NOT NULL,
+                    validation TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    pr_number INTEGER,
+                    pr_url TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(observation_id) REFERENCES observations(id)
+                );
+                CREATE TABLE IF NOT EXISTS activity (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    app_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    agent_name TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    input_summary TEXT NOT NULL,
+                    output_summary TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO pull_requests(
+                    id, app_id, observation_id, hypothesis, success_metric, risk,
+                    branch, sandbox_path, base_commit, proposed_commit, diff,
+                    validation, status, pr_number, pr_url, created_at
+                )
+                SELECT
+                    id, app_id, observation_id, hypothesis, success_metric, risk,
+                    branch, sandbox_path, base_commit, proposed_commit, diff,
+                    validation,
+                    CASE status
+                        WHEN 'applied' THEN 'merged'
+                        WHEN 'rejected' THEN 'closed'
+                        ELSE 'checks_passed'
+                    END,
+                    NULL, NULL, created_at
+                FROM proposals
+                """
+            )
+            connection.execute(
+                "UPDATE observations SET status = 'pr_ready' WHERE status = 'proposed'"
             )
 
     def add_signals(self, app_id: str, signals: list[dict[str, Any]]) -> int:
@@ -146,35 +201,55 @@ class StateStore:
             if cursor.rowcount != 1:
                 raise ValueError(f"Observation {observation_id} does not exist")
 
-    def add_proposal(self, proposal: dict[str, Any]) -> None:
+    def add_pull_request(self, pull_request: dict[str, Any]) -> None:
         fields = (
             "id", "app_id", "observation_id", "hypothesis", "success_metric", "risk",
             "branch", "sandbox_path", "base_commit", "proposed_commit", "diff",
-            "validation", "status", "created_at",
+            "validation", "status", "pr_number", "pr_url", "created_at",
         )
         with self.connect() as connection:
             connection.execute(
-                f"INSERT INTO proposals({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
-                tuple(proposal[field] for field in fields),
+                f"INSERT INTO pull_requests({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
+                tuple(pull_request.get(field) for field in fields),
             )
 
-    def proposals(self) -> list[dict[str, Any]]:
+    def pull_requests(self) -> list[dict[str, Any]]:
         with self.connect() as connection:
-            rows = connection.execute("SELECT * FROM proposals ORDER BY created_at DESC").fetchall()
+            rows = connection.execute("SELECT * FROM pull_requests ORDER BY created_at DESC").fetchall()
         return [dict(row) for row in rows]
 
-    def proposal(self, proposal_id: str) -> dict[str, Any]:
+    def pull_request(self, pull_request_id: str) -> dict[str, Any]:
         with self.connect() as connection:
-            row = connection.execute("SELECT * FROM proposals WHERE id = ?", (proposal_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM pull_requests WHERE id = ?", (pull_request_id,)
+            ).fetchone()
         if not row:
-            raise ValueError(f"Proposal {proposal_id} does not exist")
+            raise ValueError(f"PR branch {pull_request_id} does not exist")
         return dict(row)
 
-    def set_proposal_status(self, proposal_id: str, status: str) -> None:
+    def set_pull_request_opened(self, pull_request_id: str, number: int, url: str) -> None:
         with self.connect() as connection:
             cursor = connection.execute(
-                "UPDATE proposals SET status = ? WHERE id = ?", (status, proposal_id)
+                "UPDATE pull_requests SET status = 'opened', pr_number = ?, pr_url = ? WHERE id = ?",
+                (number, url, pull_request_id),
             )
             if cursor.rowcount != 1:
-                raise ValueError(f"Proposal {proposal_id} does not exist")
+                raise ValueError(f"PR branch {pull_request_id} does not exist")
 
+    def add_activity(self, activity: dict[str, Any]) -> None:
+        fields = (
+            "run_id", "app_id", "agent_id", "agent_name", "stage", "status",
+            "input_summary", "output_summary", "duration_ms", "created_at",
+        )
+        with self.connect() as connection:
+            connection.execute(
+                f"INSERT INTO activity({', '.join(fields)}) VALUES ({', '.join('?' for _ in fields)})",
+                tuple(activity[field] for field in fields),
+            )
+
+    def activities(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM activity ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]

@@ -6,17 +6,14 @@
     "Do not use deceptive, coercive, or addictive interaction patterns.",
     "Do not weaken authentication, authorization, privacy, accessibility, audit, or rollback controls.",
     "Every change must cite evidence, state a falsifiable hypothesis, and define a success metric.",
-    "A failed or missing validation is a failed proposal, never a warning to ignore."
+    "A failed or missing validation blocks pull-request creation."
   ],
   "humanInTheLoop": {
-    "observationSelection": "required",
-    "changeApproval": "required"
+    "observationSelection": "required"
   },
-  "automaticApprovalRiskLevels": ["low"],
   "limits": {
     "maxChangedFiles": 5,
     "validationTimeoutSeconds": 60,
     "maxEvidenceSamples": 5
   }
 }
-

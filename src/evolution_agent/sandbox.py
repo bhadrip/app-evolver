@@ -37,19 +37,19 @@ class Sandbox:
             check=False,
         )
 
-    def propose(self, contract: AppContract, observation: dict[str, Any]) -> dict[str, Any]:
+    def prepare_pull_request(self, contract: AppContract, observation: dict[str, Any]) -> dict[str, Any]:
         status = self._run(["git", "status", "--porcelain"], contract.root)
         if status.returncode != 0 or status.stdout.strip():
-            raise ValueError("App working tree must be clean before creating a proposal")
+            raise ValueError("App working tree must be clean before preparing a PR branch")
 
         capability = contract.capability(observation["theme"])
         change = capability["change"]
         if change.get("kind") != "json_set":
             raise ValueError(f"Unsupported grounded change operation: {change.get('kind')}")
 
-        proposal_id = uuid.uuid4().hex[:10]
-        branch = f"evolution/{proposal_id}"
-        sandbox_path = self.root / contract.app_id / proposal_id
+        pull_request_id = uuid.uuid4().hex[:10]
+        branch = f"evolution/{pull_request_id}"
+        sandbox_path = self.root / contract.app_id / pull_request_id
         sandbox_path.parent.mkdir(parents=True, exist_ok=True)
         base = self._run(["git", "rev-parse", "HEAD"], contract.root)
         if base.returncode != 0:
@@ -88,10 +88,10 @@ class Sandbox:
             ["git", "commit", "-m", f"evolve: {capability['description']}"], sandbox_path
         )
         if committed.returncode != 0:
-            raise ValueError(f"Could not commit proposal: {committed.stdout.strip()}")
+            raise ValueError(f"Could not commit PR branch: {committed.stdout.strip()}")
         proposed_commit = self._run(["git", "rev-parse", "HEAD"], sandbox_path).stdout.strip()
         return {
-            "id": proposal_id,
+            "id": pull_request_id,
             "app_id": contract.app_id,
             "observation_id": observation["id"],
             "hypothesis": (
@@ -106,6 +106,7 @@ class Sandbox:
             "proposed_commit": proposed_commit,
             "diff": diff,
             "validation": "\n\n".join(validation_output),
-            "status": "validated",
+            "status": "checks_passed",
+            "pr_number": None,
+            "pr_url": None,
         }
-

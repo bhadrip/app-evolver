@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "agents": [
+    {
+      "id": "signal-analyst",
+      "name": "Signal Analyst",
+      "stage": "Observe",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Group related customer signals, retain supporting evidence, and rank opportunities without inventing customer needs."
+    },
+    {
+      "id": "product-manager",
+      "name": "Product Manager",
+      "stage": "Frame",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Turn the selected observation into a falsifiable hypothesis and a measurable success criterion consistent with the product intent."
+    },
+    {
+      "id": "software-engineer",
+      "name": "Software Engineer",
+      "stage": "Implement",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "sandbox worktree",
+      "instructions": "Make the smallest change permitted by the evolution contract on a dedicated Git branch inside a disposable worktree."
+    },
+    {
+      "id": "quality-reviewer",
+      "name": "Quality Reviewer",
+      "stage": "Validate",
+      "enabled": true,
+      "model": "deterministic",
+      "access": "read-only",
+      "instructions": "Run the repository's existing checks, verify changed paths, and block PR creation when any required validation fails."
+    }
+  ]
+}
