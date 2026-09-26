@@ -4,6 +4,7 @@ import argparse
 import html
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .engine import Engine
@@ -13,6 +14,7 @@ STYLE = """
 :root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#172d28;background:#f4f3ed;--ink:#172d28;--muted:#64746f;--line:#d7ded9;--green:#246a50;--green-soft:#e3efd9;--paper:#fff;--dark:#15362d;--warn:#fff0d2;--bad:#ffe3db}*{box-sizing:border-box}
 body{margin:0}header{padding:26px max(5vw,24px) 0;background:var(--dark);color:white}header h1{margin:0 0 5px;font-family:Georgia,serif;font-size:2.25rem}header p{margin:0;color:#c9ded5}.nav{display:flex;gap:6px;margin-top:22px}.nav a{padding:12px 15px;color:#c9ded5;text-decoration:none;border-radius:10px 10px 0 0;font-weight:700}.nav a.active{background:#f4f3ed;color:var(--ink)}
 main{width:min(1180px,90vw);margin:34px auto 80px}.toolbar,.policy,.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.policy{margin:14px 0 26px}.pill{display:inline-flex;padding:6px 10px;border-radius:99px;background:var(--green-soft);font-size:.82rem;font-weight:750}.pill.off{background:#e6e8e7;color:var(--muted)}.pill.warn{background:var(--warn)}
+.app-picker label{display:flex;align-items:center;gap:10px;font-weight:750}.app-picker select{border:1px solid #aebbb5;border-radius:10px;padding:9px 12px;background:white;color:var(--ink);font:inherit}
 h2{font-family:Georgia,serif;font-size:1.8rem;margin:42px 0 16px}h3{margin:10px 0 6px}.grid{display:grid;gap:15px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 10px 30px #173d3208}.row{display:flex;justify-content:space-between;gap:20px;align-items:start}.muted{color:var(--muted)}.score{font-size:1.4rem;font-weight:800}
 button,.button{display:inline-block;background:var(--green);color:white;border:0;border-radius:99px;padding:10px 15px;font:inherit;font-weight:750;cursor:pointer;text-decoration:none}button.secondary{background:white;color:var(--ink);border:1px solid #9baba4}button:disabled{cursor:not-allowed;opacity:.48}form.inline{display:inline}.field{display:grid;gap:6px;margin-top:14px}.field label{font-weight:750}.field input,.field textarea{width:100%;border:1px solid #aebbb5;border-radius:10px;padding:10px 12px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:105px;resize:vertical}.check{display:flex;gap:9px;align-items:center;margin:14px 0}.check input{width:18px;height:18px}
 pre{white-space:pre-wrap;overflow:auto;background:#15241f;color:#d8f3e8;padding:16px;border-radius:12px;max-height:360px}.error,.success,.note{padding:14px;border-radius:12px}.error{background:var(--bad);border:1px solid #d88870}.success{background:var(--green-soft);border:1px solid #8bab63}.note{background:var(--warn);border:1px solid #d9b96f}.pipeline{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:4px 0 10px}.agent-node{min-width:190px;flex:1;background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.agent-node.disabled{opacity:.5}.connector{display:grid;place-items:center;min-width:34px;color:var(--green);font-size:1.4rem}.agent-node .stage{color:var(--green);font-size:.75rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.agent-node p{color:var(--muted);font-size:.86rem;margin:6px 0 0}
@@ -31,23 +33,41 @@ class DashboardHandler(BaseHTTPRequestHandler):
         request = urlparse(self.path)
         if request.path != "/":
             return self.send_error(HTTPStatus.NOT_FOUND)
-        view = parse_qs(request.query).get("view", ["control"])[0]
+        query = parse_qs(request.query)
+        view = query.get("view", ["control"])[0]
         if view not in {"control", "agents", "governance", "activity"}:
             view = "control"
         message = self._message()
-        content = {
-            "control": self._control_view,
-            "agents": self._agents_view,
-            "governance": self._governance_view,
-            "activity": self._activity_view,
-        }[view]()
+        apps = self.engine.registry.all()
+        app_id = query.get("app", [self.engine.registry.default_app_id() or ""])[0]
+        if not apps:
+            content = self._registration_view()
+            app_context = "No companion app registered"
+        else:
+            try:
+                app = self.engine.registry.get(app_id)
+            except ValueError:
+                app = apps[0]
+                app_id = app["id"]
+            content = {
+                "control": self._control_view,
+                "agents": self._agents_view,
+                "governance": self._governance_view,
+                "activity": self._activity_view,
+            }[view](app_id)
+            options = "".join(
+                f'<option value="{html.escape(item["id"])}"{" selected" if item["id"] == app_id else ""}>{html.escape(item["name"])}</option>'
+                for item in apps
+            )
+            app_context = f'<form method="get" class="app-picker"><input type="hidden" name="view" value="{html.escape(view)}"><label>Companion app <select name="app" onchange="this.form.submit()">{options}</select></label></form>'
+        app_query = f"&app={html.escape(app_id)}" if app_id else ""
         nav = "".join(
-            f'<a class="{"active" if view == key else ""}" href="/?view={key}">{label}</a>'
+            f'<a class="{"active" if view == key else ""}" href="/?view={key}{app_query}">{label}</a>'
             for key, label in (("control", "Control room"), ("agents", "Agent team"), ("governance", "Governance"), ("activity", "Activity"))
         )
         body = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>App Evolver</title><style>{STYLE}</style></head>
         <body><header><h1>App Evolver</h1><p>Compose agents. Observe decisions. Deliver through pull requests.</p><nav class="nav">{nav}</nav></header>
-        <main>{message}{content}</main></body></html>"""
+        <main>{message}<div class="row">{app_context}<a href="/?view=control#register">Register another app</a></div>{content}</main></body></html>"""
         encoded = body.encode()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -60,10 +80,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         values = parse_qs(self.rfile.read(length).decode(), keep_blank_values=True)
         action = values.get("action", [""])[0]
         redirect_view = values.get("view", ["control"])[0]
+        app_id = values.get("app_id", [""])[0]
         try:
-            if action == "sync":
-                count = self.engine.sync()
-                observations = self.engine.triage()
+            if action == "register_app":
+                app = self.engine.register_app(Path(values["app_path"][0]).expanduser())
+                app_id = app["id"]
+                self.__class__.notice = f"Registered {app['name']}."
+            elif action == "sync":
+                count = self.engine.sync(app_id)
+                observations = self.engine.triage(app_id)
                 self.__class__.notice = f"Synced {count} new signals; {len(observations)} opportunity themes are ready."
             elif action == "select":
                 observation_id = int(values["observation_id"][0])
@@ -89,34 +114,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as error:
             self.__class__.error = str(error)
         self.send_response(HTTPStatus.SEE_OTHER)
-        self.send_header("Location", f"/?view={redirect_view}")
+        suffix = f"&app={app_id}" if app_id else ""
+        self.send_header("Location", f"/?view={redirect_view}{suffix}")
         self.end_headers()
 
-    def _control_view(self) -> str:
-        observations = self.engine.store.observations()
-        pull_requests = self.engine.store.pull_requests()
+    def _control_view(self, app_id: str) -> str:
+        observations = self.engine.store.observations(app_id)
+        pull_requests = self.engine.store.pull_requests(app_id)
         observation_cards = "".join(self._observation_card(item) for item in observations)
         pr_cards = "".join(self._pull_request_card(item) for item in pull_requests)
-        hitl = self.engine.constitution["humanInTheLoop"]["observationSelection"]
-        remote_ready = self.engine.pull_request_remote_ready()
+        hitl = self.engine.constitution(app_id)["humanInTheLoop"]["observationSelection"]
+        remote_ready = self.engine.pull_request_remote_ready(app_id)
         return f"""
         <h2>Evolution pipeline</h2>{self._pipeline()}
         <div class="policy"><span class="pill">Observation selection: {html.escape(hitl)}</span><span class="pill">Delivery: pull request only</span><span class="pill {'off' if not remote_ready else ''}">GitHub remote: {'ready' if remote_ready else 'not configured'}</span></div>
-        <div class="toolbar"><form class="inline" method="post"><input type="hidden" name="action" value="sync"><input type="hidden" name="view" value="control"><button>Sync & triage</button></form><a class="button" href="/?view=activity">Observe agent behavior</a><a class="button" href="/?view=governance">View governing constraints</a></div>
+        <div class="toolbar"><form class="inline" method="post"><input type="hidden" name="action" value="sync"><input type="hidden" name="view" value="control"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><button>Sync & triage</button></form><a class="button" href="/?view=activity&app={html.escape(app_id)}">Observe agent behavior</a><a class="button" href="/?view=governance&app={html.escape(app_id)}">View governing constraints</a></div>
         <h2>Candidate observations</h2><div class="grid">{observation_cards or '<div class="empty">No observations yet. Sync the mock source to begin.</div>'}</div>
-        <h2>Pull requests</h2><div class="grid">{pr_cards or '<div class="empty">No PR branches have been prepared.</div>'}</div>
+        <h2>Pull requests</h2><div class="grid">{pr_cards or '<div class="empty">No PR branches have been prepared.</div>'}</div>{self._registration_view()}
         """
 
-    def _agents_view(self) -> str:
-        cards = "".join(self._agent_editor(agent) for agent in self.engine.agents.all())
+    def _agents_view(self, app_id: str) -> str:
+        cards = "".join(self._agent_editor(agent, app_id) for agent in self.engine.agents.all())
         return f"""
         <h2>Agent composition</h2>{self._pipeline()}
         <p class="note">This prototype uses deterministic adapters. Names, instructions, and enabled state are persisted now; model-backed adapters can later consume the same instructions without changing the orchestration or PR workflow.</p>
         <div class="grid two">{cards}</div>
         """
 
-    def _activity_view(self) -> str:
-        activities = self.engine.store.activities()
+    def _activity_view(self, app_id: str) -> str:
+        activities = self.engine.store.activities(app_id=app_id)
         items = "".join(self._activity_item(item) for item in activities)
         completed = sum(item["status"] == "completed" for item in activities)
         failed = sum(item["status"] == "failed" for item in activities)
@@ -125,10 +151,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         <div class="activity">{items or '<div class="empty">Run Sync & triage or prepare a PR to generate activity.</div>'}</div>
         """
 
-    def _governance_view(self) -> str:
-        constitution = self.engine.constitution
-        contract = self.engine.contract().document
-        config = self.engine.config
+    def _governance_view(self, app_id: str) -> str:
+        constitution = self.engine.constitution(app_id)
+        contract = self.engine.contract(app_id).document
+        platform_policy = self.engine.platform_policy
         rules = "".join(f"<li>{html.escape(rule)}</li>" for rule in constitution["nonNegotiables"])
         mutable = "".join(f'<span class="path">{html.escape(path)}</span>' for path in contract["mutablePaths"])
         protected = "".join(f'<span class="path protected">{html.escape(path)}</span>' for path in contract["protectedPaths"])
@@ -146,8 +172,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             f'<div class="kv"><strong>{html.escape(limit_labels.get(key, key))}</strong><span>{html.escape(str(value))}{" seconds" if key == "validationTimeoutSeconds" else ""}</span></div>'
             for key, value in constitution["limits"].items()
         )
-        source = config["observationSource"]
-        pr = config["pullRequests"]
+        source = contract["observationSource"]
+        pr = contract["pullRequests"]
         return f"""
         <h2>Governance model</h2>
         <p class="muted">The constitution governs every agent. The app contract narrows what may change. Repository checks validate the branch. The existing PR workflow governs delivery.</p>
@@ -160,14 +186,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         <h2>Constitution</h2>
         <div class="grid two">
-          <section class="card"><span class="pill">Purpose</span><h3>North star</h3><p>{html.escape(constitution['purpose'])}</p><p class="muted"><code>constitution.json</code> · schema {constitution['schemaVersion']}</p></section>
+          <section class="card"><span class="pill">Purpose</span><h3>North star</h3><p>{html.escape(constitution['purpose'])}</p><p class="muted"><code>{html.escape(contract['constitution'])}</code> · schema {constitution['schemaVersion']}</p></section>
           <section class="card"><span class="pill">Human control</span><h3>Observation selection</h3><p class="score">{html.escape(constitution['humanInTheLoop']['observationSelection'])}</p><p class="muted">Code changes are delivered only through the repository's pull-request controls.</p></section>
           <section class="card"><span class="pill warn">Non-negotiable</span><h3>Rules every agent inherits</h3><ol class="rule-list">{rules}</ol></section>
           <section class="card"><span class="pill">Operating envelope</span><h3>Limits</h3>{limits}</section>
         </div>
 
         <h2>App evolution contract</h2>
-        <section class="card"><span class="pill">Product intent</span><h3>{html.escape(contract['name'])}</h3><p>{html.escape(contract['productIntent'])}</p><p class="muted"><code>pet-store-app/evolution.json</code> · schema {contract['schemaVersion']}</p></section>
+        <section class="card"><span class="pill">Product intent</span><h3>{html.escape(contract['name'])}</h3><p>{html.escape(contract['productIntent'])}</p><p class="muted"><code>evolution.json</code> in companion repository · schema {contract['schemaVersion']}</p></section>
         <div class="grid two">
           <section class="card"><span class="pill">Mutable</span><h3>Agent may change</h3><div class="path-list">{mutable}</div></section>
           <section class="card"><span class="pill warn">Protected</span><h3>Agent may not change</h3><div class="path-list">{protected}</div></section>
@@ -177,10 +203,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         <h2>Runtime and delivery</h2>
         <div class="grid two">
-          <section class="card"><h3>Observation source</h3><div class="kv"><strong>Kind</strong><span>{html.escape(source['kind'])}</span></div><div class="kv"><strong>Path</strong><code>{html.escape(source['path'])}</code></div><div class="kv"><strong>Sandbox</strong><code>{html.escape(config['sandboxRoot'])}</code></div></section>
+          <section class="card"><h3>Observation source</h3><div class="kv"><strong>Kind</strong><span>{html.escape(source['kind'])}</span></div><div class="kv"><strong>Path</strong><code>{html.escape(source['path'])}</code></div><div class="kv"><strong>Ownership</strong><span>Companion app repository</span></div></section>
           <section class="card"><h3>Pull requests</h3><div class="kv"><strong>Provider</strong><span>{html.escape(pr['provider'])}</span></div><div class="kv"><strong>Base branch</strong><code>{html.escape(pr['baseBranch'])}</code></div><div class="kv"><strong>Initial state</strong><span>{'Draft PR' if pr['draft'] else 'Ready for review'}</span></div></section>
         </div>
+        <h2>App Evolver platform policy</h2>
+        <section class="card"><p>{html.escape(platform_policy['purpose'])}</p><ol class="rule-list">{"".join(f'<li>{html.escape(rule)}</li>' for rule in platform_policy['nonNegotiables'])}</ol><p class="muted"><code>resources/defaults/platform-policy.json</code> · applies to every registered app</p></section>
         """
+
+    @staticmethod
+    def _registration_view() -> str:
+        return """<section class="card" id="register"><span class="pill">Runtime configuration</span><h2>Register a companion app</h2><p>Provide a local Git checkout containing an <code>evolution.json</code> contract. The path is stored only in App Evolver's runtime data directory.</p><form method="post"><input type="hidden" name="action" value="register_app"><input type="hidden" name="view" value="control"><div class="field"><label>Application repository path<input name="app_path" type="text" placeholder="/path/to/app" required></label></div><button>Register app</button></form></section>"""
 
     @staticmethod
     def _capability_card(name: str, capability: dict) -> str:
@@ -204,9 +236,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         evidence = item["evidence"]
         actions = ""
         if item["status"] == "candidate":
-            actions = self._button("select", "Select", observation_id=item["id"])
+            actions = self._button("select", "Select", app_id=item["app_id"], observation_id=item["id"])
         elif item["status"] == "selected":
-            actions = self._button("prepare_pr", "Prepare PR branch", observation_id=item["id"])
+            actions = self._button("prepare_pr", "Prepare PR branch", app_id=item["app_id"], observation_id=item["id"])
         samples = "".join(f"<li>{html.escape(str(value))}</li>" for value in evidence.get("samples", []))
         return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['theme'].replace('_', ' ').title())}</h3><p>{html.escape(item['summary'])}</p><details><summary>Evidence</summary><ul>{samples}</ul></details></div><div><div class="score">{item['score']:.0f}</div><p class="muted">signals</p>{actions}</div></div></article>"""
 
@@ -215,14 +247,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if item["pr_url"]:
             action = f'<a class="button" href="{html.escape(item["pr_url"])}">View PR #{item["pr_number"]}</a>'
         elif remote_ready:
-            action = self._button("open_pr", "Open draft PR", pull_request_id=item["id"])
+            action = self._button("open_pr", "Open draft PR", app_id=item["app_id"], pull_request_id=item["id"])
         else:
             action = '<button disabled>Open PR</button><p class="muted">Add an origin remote to enable</p>'
         return f"""<article class="card"><div class="row"><div><span class="pill">{html.escape(item['status'].replace('_', ' '))}</span><h3>{html.escape(item['branch'])}</h3><p><strong>Hypothesis:</strong> {html.escape(item['hypothesis'])}</p><p><strong>Success metric:</strong> {html.escape(item['success_metric'])}</p></div><div>{action}</div></div><details><summary>PR diff</summary><pre>{html.escape(item['diff'])}</pre></details><details><summary>Checks</summary><pre>{html.escape(item['validation'])}</pre></details></article>"""
 
-    def _agent_editor(self, agent: dict) -> str:
+    def _agent_editor(self, agent: dict, app_id: str) -> str:
         checked = " checked" if agent["enabled"] else ""
-        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
+        return f"""<article class="card"><span class="pill">{html.escape(agent['stage'])}</span><h3>{html.escape(agent['name'])}</h3><p class="muted">{html.escape(agent['id'])} · {html.escape(agent['access'])}</p><form method="post"><input type="hidden" name="action" value="save_agent"><input type="hidden" name="view" value="agents"><input type="hidden" name="app_id" value="{html.escape(app_id)}"><input type="hidden" name="agent_id" value="{html.escape(agent['id'])}"><label class="check"><input type="checkbox" name="enabled"{checked}> Enabled in pipeline</label><div class="field"><label>Name<input name="name" value="{html.escape(agent['name'])}" required></label></div><div class="field"><label>Runtime adapter<input name="model" value="{html.escape(agent['model'])}" readonly></label></div><div class="field"><label>Instructions<textarea name="instructions" required>{html.escape(agent['instructions'])}</textarea></label></div><button>Save agent</button></form></article>"""
 
     def _activity_item(self, item: dict) -> str:
         return f"""<article class="activity-item {html.escape(item['status'])}"><div class="activity-head"><div><span class="pill">{html.escape(item['stage'])}</span><strong> {html.escape(item['agent_name'])}</strong></div><span class="muted">run {html.escape(item['run_id'])} · {item['duration_ms']} ms</span></div><div class="io"><div><strong>Input</strong><p>{html.escape(item['input_summary'])}</p></div><div><strong>Output · {html.escape(item['status'])}</strong><p>{html.escape(item['output_summary'])}</p></div></div></article>"""

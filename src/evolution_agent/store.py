@@ -213,9 +213,15 @@ class StateStore:
                 tuple(pull_request.get(field) for field in fields),
             )
 
-    def pull_requests(self) -> list[dict[str, Any]]:
+    def pull_requests(self, app_id: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM pull_requests"
+        parameters: tuple[Any, ...] = ()
+        if app_id:
+            query += " WHERE app_id = ?"
+            parameters = (app_id,)
+        query += " ORDER BY created_at DESC"
         with self.connect() as connection:
-            rows = connection.execute("SELECT * FROM pull_requests ORDER BY created_at DESC").fetchall()
+            rows = connection.execute(query, parameters).fetchall()
         return [dict(row) for row in rows]
 
     def pull_request(self, pull_request_id: str) -> dict[str, Any]:
@@ -247,9 +253,15 @@ class StateStore:
                 tuple(activity[field] for field in fields),
             )
 
-    def activities(self, limit: int = 100) -> list[dict[str, Any]]:
+    def activities(self, limit: int = 100, app_id: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM activity"
+        parameters: tuple[Any, ...]
+        if app_id:
+            query += " WHERE app_id = ?"
+            parameters = (app_id, limit)
+        else:
+            parameters = (limit,)
+        query += " ORDER BY id DESC LIMIT ?"
         with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM activity ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
         return [dict(row) for row in rows]

@@ -26,7 +26,7 @@
       "enabled": true,
       "model": "deterministic",
       "access": "sandbox worktree",
-      "instructions": "Make the smallest change permitted by the evolution contract on a dedicated Git branch inside a disposable worktree."
+      "instructions": "Make the smallest change permitted by the companion app's evolution contract on a dedicated Git branch inside a disposable worktree."
     },
     {
       "id": "quality-reviewer",
@@ -35,7 +35,7 @@
       "enabled": true,
       "model": "deterministic",
       "access": "read-only",
-      "instructions": "Run the repository's existing checks, verify changed paths, and block PR creation when any required validation fails."
+      "instructions": "Run the companion repository's existing checks, verify changed paths, and block PR creation when any required validation fails."
     }
   ]
 }

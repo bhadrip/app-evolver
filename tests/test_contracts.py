@@ -11,7 +11,11 @@ class ContractTests(unittest.TestCase):
         (root / ".git").mkdir()
         (root / "evolution.json").write_text(json.dumps({
             "appId": "demo",
-            "observationEndpoint": "http://example.invalid",
+            "name": "Demo",
+            "productIntent": "Demonstrate contracts.",
+            "observationSource": {"kind": "fixture", "path": "observations.json"},
+            "constitution": "constitution.json",
+            "pullRequests": {"provider": "github", "baseBranch": "main", "draft": True},
             "mutablePaths": ["config/features.json"],
             "protectedPaths": ["src/"],
             "validationCommands": []
@@ -35,4 +39,3 @@ class ContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

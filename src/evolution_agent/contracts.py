@@ -20,7 +20,10 @@ class AppContract:
         if not contract_path.is_file():
             raise ValueError(f"Missing evolution contract: {contract_path}")
         document = json.loads(contract_path.read_text())
-        required = {"appId", "observationEndpoint", "mutablePaths", "protectedPaths", "validationCommands"}
+        required = {
+            "appId", "name", "productIntent", "observationSource", "constitution",
+            "pullRequests", "mutablePaths", "protectedPaths", "validationCommands",
+        }
         missing = sorted(required - document.keys())
         if missing:
             raise ValueError(f"Evolution contract is missing: {', '.join(missing)}")
@@ -39,6 +42,12 @@ class AppContract:
             raise ValueError(f"No grounded evolution capability exists for theme: {theme}")
         return self.capabilities[theme]
 
+    def resolve_owned_path(self, relative_path: str) -> Path:
+        path = (self.root / relative_path).resolve()
+        if self.root not in path.parents:
+            raise ValueError(f"App-owned path escapes repository: {relative_path}")
+        return path
+
     def validate_changed_paths(self, changed_paths: list[str], max_files: int) -> None:
         if not changed_paths:
             raise ValueError("Planner produced no change")
@@ -51,4 +60,3 @@ class AppContract:
                 raise ValueError(f"Planner touched protected path: {path}")
             if not any(path == item or path.startswith(item.rstrip("/") + "/") for item in mutable):
                 raise ValueError(f"Planner touched path outside the evolution surface: {path}")
-

@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 
 class AgentTeam:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, default_path: Path | None = None):
         self.path = path.resolve()
+        if not self.path.exists():
+            if not default_path:
+                raise ValueError("Agent team does not exist and no default was provided")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(default_path, self.path)
 
     def document(self) -> dict[str, Any]:
         return json.loads(self.path.read_text())

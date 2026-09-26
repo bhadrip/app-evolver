@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -12,41 +13,61 @@ from typing import Any
 from .agents import AgentTeam
 from .contracts import AppContract
 from .sandbox import Sandbox
+from .registry import AppRegistry
 from .store import StateStore
 from .triage import triage
 
 
-ROOT = Path(__file__).resolve().parents[2]
+RESOURCE_ROOT = Path(__file__).resolve().parent / "resources"
 
 
 class Engine:
-    def __init__(self, root: Path = ROOT):
-        self.root = root.resolve()
-        self.config = json.loads((self.root / "agent-config.json").read_text())
-        self.constitution = json.loads((self.root / "constitution.json").read_text())
-        self.store = StateStore(self.root / self.config["stateDatabase"])
-        self.sandbox = Sandbox(self.root / self.config["sandboxRoot"], self.constitution)
-        self.agents = AgentTeam(self.root / self.config["agentTeam"])
+    def __init__(self, resource_root: Path = RESOURCE_ROOT):
+        self.resource_root = resource_root.resolve()
+        self.config = json.loads((self.resource_root / "service-config.json").read_text())
+        configured_data_root = os.environ.get("APP_EVOLVER_DATA_DIR", self.config["dataDirectory"])
+        self.data_root = Path(configured_data_root)
+        if not self.data_root.is_absolute():
+            self.data_root = (Path.cwd() / self.data_root).resolve()
+        self.data_root.mkdir(parents=True, exist_ok=True)
+        self.platform_policy = json.loads((self.resource_root / self.config["platformPolicy"]).read_text())
+        self.registry = AppRegistry(self.data_root / self.config["appRegistry"])
+        self.store = StateStore(self.data_root / self.config["stateDatabase"])
+        self.sandbox = Sandbox(self.data_root / self.config["sandboxDirectory"])
+        self.agents = AgentTeam(
+            self.data_root / self.config["agentTeam"],
+            self.resource_root / self.config["defaultAgentTeam"],
+        )
+        if os.environ.get("APP_EVOLVER_APP"):
+            self.registry.register(Path(os.environ["APP_EVOLVER_APP"]))
 
-    def contract(self, app_id: str = "pet-store") -> AppContract:
-        app = next((item for item in self.config["apps"] if item["id"] == app_id), None)
-        if not app:
-            raise ValueError(f"Unknown app: {app_id}")
-        return AppContract.load(self.root / app["path"])
+    def register_app(self, app_root: Path) -> dict[str, Any]:
+        return self.registry.register(app_root)
 
-    def sync(self, app_id: str = "pet-store") -> int:
-        source = self.config["observationSource"]
+    def contract(self, app_id: str) -> AppContract:
+        app = self.registry.get(app_id)
+        return AppContract.load(Path(app["path"]))
+
+    def constitution(self, app_id: str) -> dict[str, Any]:
+        contract = self.contract(app_id)
+        document = json.loads(contract.resolve_owned_path(contract.document["constitution"]).read_text())
+        for key, ceiling in self.platform_policy["ceilings"].items():
+            if int(document["limits"][key]) > int(ceiling):
+                raise ValueError(f"App constitution exceeds platform ceiling for {key}")
+        return document
+
+    def sync(self, app_id: str) -> int:
+        contract = self.contract(app_id)
+        source = contract.document["observationSource"]
         since = self.store.latest_source_id(app_id)
         if source["kind"] != "fixture":
             raise ValueError(f"Unsupported observation source in this prototype: {source['kind']}")
-        fixture_path = (self.root / source["path"]).resolve()
-        if self.root not in fixture_path.parents:
-            raise ValueError("Observation fixture must remain inside the App Evolver repository")
+        fixture_path = contract.resolve_owned_path(source["path"])
         payload = json.loads(fixture_path.read_text())
         new_observations = [item for item in payload["observations"] if int(item["id"]) > since]
         return self.store.add_signals(app_id, new_observations)
 
-    def triage(self, app_id: str = "pet-store") -> list[int]:
+    def triage(self, app_id: str) -> list[int]:
         agent = self.agents.get("signal-analyst", require_enabled=True)
         started = time.perf_counter()
         signals = self.store.signals(app_id)
@@ -55,7 +76,7 @@ class Engine:
             result = triage(
                 self.store,
                 self.contract(app_id),
-                int(self.constitution["limits"]["maxEvidenceSamples"]),
+                int(self.constitution(app_id)["limits"]["maxEvidenceSamples"]),
             )
             self._activity(
                 agent, app_id, run_id, "completed", f"{len(signals)} observation signals",
@@ -74,7 +95,8 @@ class Engine:
 
     def prepare_pull_request(self, observation_id: int) -> dict[str, Any]:
         observation = self.store.observation(observation_id)
-        selection_policy = self.constitution["humanInTheLoop"]["observationSelection"]
+        constitution = self.constitution(observation["app_id"])
+        selection_policy = constitution["humanInTheLoop"]["observationSelection"]
         if selection_policy == "required" and observation["status"] != "selected":
             raise ValueError("This constitution requires a human to select the observation first")
 
@@ -98,7 +120,7 @@ class Engine:
 
         engineer_started = time.perf_counter()
         try:
-            pull_request = self.sandbox.prepare_pull_request(contract, observation)
+            pull_request = self.sandbox.prepare_pull_request(contract, observation, constitution)
         except Exception as error:
             self._activity(
                 engineer, observation["app_id"], run_id, "failed",
@@ -122,7 +144,7 @@ class Engine:
         )
         return pull_request
 
-    def pull_request_remote_ready(self, app_id: str = "pet-store") -> bool:
+    def pull_request_remote_ready(self, app_id: str) -> bool:
         contract = self.contract(app_id)
         remote = subprocess.run(
             ["git", "remote", "get-url", "origin"], cwd=contract.root, text=True,
@@ -149,12 +171,13 @@ class Engine:
         pushed = self._run(["git", "push", "-u", "origin", pull_request["branch"]], contract.root)
         if pushed.returncode != 0:
             raise ValueError(f"Could not push PR branch: {pushed.stdout.strip()}")
+        pull_request_policy = contract.document["pullRequests"]
         command = [
             "gh", "pr", "create", "--head", pull_request["branch"],
-            "--base", self.config["pullRequests"]["baseBranch"],
+            "--base", pull_request_policy["baseBranch"],
             "--title", f"Evolve: {capability['description']}", "--body", body,
         ]
-        if self.config["pullRequests"].get("draft", True):
+        if pull_request_policy.get("draft", True):
             command.append("--draft")
         opened = self._run(command, contract.root)
         if opened.returncode != 0:
@@ -166,13 +189,13 @@ class Engine:
         self.store.set_observation_status(pull_request["observation_id"], "pr_open")
         return metadata["url"]
 
-    def cycle(self, app_id: str = "pet-store") -> str:
+    def cycle(self, app_id: str) -> str:
         self.sync(app_id)
         self.triage(app_id)
         candidates = [item for item in self.store.observations(app_id) if item["status"] == "candidate"]
         if not candidates:
             return "No actionable candidate observations."
-        if self.constitution["humanInTheLoop"]["observationSelection"] == "required":
+        if self.constitution(app_id)["humanInTheLoop"]["observationSelection"] == "required":
             return "Candidate observations are ready for human selection."
         observation = candidates[0]
         self.select(observation["id"])

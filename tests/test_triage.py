@@ -15,30 +15,33 @@ class TriageTests(unittest.TestCase):
             (root / ".git").mkdir()
             (root / "evolution.json").write_text(json.dumps({
                 "appId": "demo",
-                "observationEndpoint": "http://example.invalid",
+                "name": "Demo",
+                "productIntent": "Demonstrate triage.",
+                "observationSource": {"kind": "fixture", "path": "observations.json"},
+                "constitution": "constitution.json",
+                "pullRequests": {"provider": "github", "baseBranch": "main", "draft": True},
                 "mutablePaths": ["features.json"],
                 "protectedPaths": [],
                 "validationCommands": [],
                 "capabilities": {
-                    "wishlist": {
-                        "description": "Add a wishlist.",
-                        "signalKeywords": ["wishlist", "save for later"]
+                    "dark_mode": {
+                        "description": "Add a dark theme.",
+                        "signalKeywords": ["dark mode", "dark theme"]
                     }
                 }
             }))
             contract = AppContract.load(root)
             store = StateStore(root / "state.db")
             store.add_signals("demo", [
-                {"id": 1, "type": "feedback_submitted", "payload": {"message": "Need a wishlist"}},
+                {"id": 1, "type": "feedback_submitted", "payload": {"message": "Need a dark mode"}},
                 {"id": 2, "type": "page_viewed", "payload": {}},
             ])
             result = triage(store, contract, max_samples=5)
             self.assertEqual(1, len(result))
             observation = store.observation(result[0])
-            self.assertEqual("wishlist", observation["theme"])
+            self.assertEqual("dark_mode", observation["theme"])
             self.assertEqual(1, observation["evidence"]["signalCount"])
 
 
 if __name__ == "__main__":
     unittest.main()
-

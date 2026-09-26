@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "dataDirectory": "var",
+  "stateDatabase": "state.db",
+  "sandboxDirectory": "sandboxes",
+  "appRegistry": "apps.json",
+  "agentTeam": "agents.json",
+  "defaultAgentTeam": "defaults/agents.json",
+  "platformPolicy": "defaults/platform-policy.json"
+}

@@ -1,89 +1,117 @@
 # App Evolver
 
-**App Evolver** is a small, auditable prototype of an observation-driven product
-team. It turns observation signals into candidate improvements while enforcing
-structure, direction, and safe boundaries. A configurable team of agents groups
-signals, frames a hypothesis, prepares a bounded change in an isolated Git
-worktree, validates it, and opens an ordinary pull request.
+App Evolver is a reusable companion service for applications that improve from
+observed customer behavior. It is intentionally application-agnostic: like a
+database server, one service can be configured at runtime to work with multiple
+independent applications.
 
-It deliberately uses a deterministic planner. That makes the first end-to-end
-loop reproducible and proves the control plane before an LLM is allowed to write
-code. Model-backed agents can later operate under the same sandbox, constitution,
-validation, and pull-request controls.
+A configurable agent team groups observations, frames a hypothesis, implements a
+bounded change in a disposable Git worktree, runs the companion repository's
+checks, and opens an ordinary pull request. App Evolver does not replace Git, CI,
+branch protection, review, merge, or revert.
 
-## Quick start with mock observations
+## Ownership boundary
 
-The first version deliberately reads synthetic, non-personal signals from
-[`mock-data/observations.json`](mock-data/observations.json). No running app,
-telemetry system, or model API is required to exercise the feedback workflow.
+App Evolver owns only generic orchestration:
 
-In the feedback-agent repository:
+- the agent runtime and control-room UI;
+- runtime app registration and state;
+- worktree isolation and contract enforcement;
+- activity traces and PR creation;
+- platform-wide safety ceilings.
+
+Every companion application owns its own:
+
+- product constitution and intent;
+- observation source;
+- mutable and protected paths;
+- grounded capabilities and success metrics;
+- validation commands;
+- Git provider, base branch, and draft-PR policy.
+
+None of those app-specific values are checked into this repository.
+
+## Run
 
 ```bash
-python3 -m src.evolution_agent.cli sync
-python3 -m src.evolution_agent.cli triage
+python3 -m src.evolution_agent.cli register /absolute/path/to/your-app
 python3 -m src.evolution_agent.cli serve
 ```
 
-Open <http://127.0.0.1:8100>. The control room has three views:
+Open <http://127.0.0.1:8100>. Apps can also be registered from the UI.
 
-- **Control room** selects observations and prepares checked PR branches.
-- **Agent team** enables agents and edits their names and instructions.
-- **Governance** visualizes the constitution, app evolution contract, protected
-  paths, allowed capabilities, operating limits, and PR delivery policy.
-- **Activity** shows each agent's inputs, outputs, status, run ID, and duration.
-
-When the app repository has a GitHub `origin`, App Evolver can push the checked
-branch and open a draft PR. CI, review, merge, and revert remain normal repository
-operations; App Evolver does not replace them.
-
-To view the store, use another terminal:
+For a separate runtime volume:
 
 ```bash
-cd ../pet-store-app
-python3 -m src.pet_store.server
+APP_EVOLVER_DATA_DIR=/var/lib/app-evolver \
+  python3 -m src.evolution_agent.cli serve
 ```
 
-The same workflow is available from the CLI:
+For a single companion checkout, registration can happen at startup:
 
 ```bash
-python3 -m src.evolution_agent.cli list
+APP_EVOLVER_APP=/workspace/my-app \
+  python3 -m src.evolution_agent.cli serve
+```
+
+Runtime state—including the app registry, SQLite state, customized agent team,
+and sandboxes—lives under `APP_EVOLVER_DATA_DIR`. It is excluded from Git.
+
+## Companion application contract
+
+The registered Git repository must contain `evolution.json`. The contract points
+to other app-owned resources using paths relative to that repository:
+
+```json
+{
+  "schemaVersion": 1,
+  "appId": "my-app",
+  "name": "My App",
+  "productIntent": "The outcome this product exists to create.",
+  "observationSource": {
+    "kind": "fixture",
+    "path": "evolution/observations.json"
+  },
+  "constitution": "evolution/constitution.json",
+  "pullRequests": {
+    "provider": "github",
+    "baseBranch": "main",
+    "draft": true
+  },
+  "mutablePaths": ["config/features.json"],
+  "protectedPaths": ["src/auth/", "evolution.json"],
+  "validationCommands": [
+    ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"]
+  ],
+  "capabilities": {}
+}
+```
+
+The evolution contract is protected: agents may read it but cannot expand their
+own authority. Contract changes require an ordinary human-reviewed PR.
+
+## Control room
+
+- **Control room:** select observations and prepare checked PR branches.
+- **Agent team:** configure the reusable composite agent runtime.
+- **Governance:** visualize platform policy and the selected app's constitution,
+  evolution surfaces, checks, and PR configuration.
+- **Activity:** inspect each agent's inputs, outputs, status, duration, and run ID.
+
+## CLI
+
+```bash
+python3 -m src.evolution_agent.cli apps
+python3 -m src.evolution_agent.cli sync --app my-app
+python3 -m src.evolution_agent.cli triage --app my-app
+python3 -m src.evolution_agent.cli list --app my-app
 python3 -m src.evolution_agent.cli select 1
 python3 -m src.evolution_agent.cli prepare-pr 1
 python3 -m src.evolution_agent.cli open-pr <branch-id>
 ```
 
-## Agent composition and human-in-the-loop
-
-[`agents.json`](agents.json) defines the composite agent team. The same settings
-are editable in the Agent team UI. The deterministic prototype persists agent
-instructions but does not claim to execute them through a model yet.
-
-[`constitution.json`](constitution.json) starts with observation selection set to
-`required`. Set it to `automatic` to let `cycle` pick the highest-ranked candidate:
-
-```json
-"humanInTheLoop": {
-  "observationSelection": "automatic"
-}
-```
-
-```bash
-python3 -m src.evolution_agent.cli cycle
-```
-
-The cycle stops at a checked branch. Opening, reviewing, and merging a PR always
-uses the repository's existing Git and GitHub primitives.
-
-## Onboarding an existing app
-
-Add an `evolution.json` contract modeled on the pet store's contract, then add the
-checkout to `agent-config.json`. Replace the fixture source with a live observation
-adapter when the control loop is ready to consume real telemetry. The agent requires an existing Git repository
-with a clean working tree before it creates a sandbox. The current deterministic
-planner supports JSON feature-flag changes; later planners can share this adapter.
-
-The Git worktree is an isolation mechanism for files and history, not a hardened
-security boundary. For untrusted generated code, validation should run in an
-ephemeral container or micro-VM with network disabled, resource limits, and a
-read-only base image.
+The current implementation uses deterministic adapters so the control plane is
+reproducible before model-backed agents are introduced. A Git worktree isolates
+files and history but is not a hardened security boundary; untrusted generated
+code should be validated in an ephemeral container or micro-VM with network and
+resource restrictions.

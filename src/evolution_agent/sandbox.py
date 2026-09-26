@@ -11,10 +11,9 @@ from .contracts import AppContract
 
 
 class Sandbox:
-    def __init__(self, root: Path, constitution: dict[str, Any]):
+    def __init__(self, root: Path):
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        self.constitution = constitution
 
     @staticmethod
     def _run(command: list[str], cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess[str]:
@@ -37,7 +36,9 @@ class Sandbox:
             check=False,
         )
 
-    def prepare_pull_request(self, contract: AppContract, observation: dict[str, Any]) -> dict[str, Any]:
+    def prepare_pull_request(
+        self, contract: AppContract, observation: dict[str, Any], constitution: dict[str, Any]
+    ) -> dict[str, Any]:
         status = self._run(["git", "status", "--porcelain"], contract.root)
         if status.returncode != 0 or status.stdout.strip():
             raise ValueError("App working tree must be clean before preparing a PR branch")
@@ -71,11 +72,11 @@ class Sandbox:
         changed = self._run(["git", "diff", "--name-only"], sandbox_path)
         changed_paths = [line for line in changed.stdout.splitlines() if line]
         contract.validate_changed_paths(
-            changed_paths, int(self.constitution["limits"]["maxChangedFiles"])
+            changed_paths, int(constitution["limits"]["maxChangedFiles"])
         )
 
         validation_output: list[str] = []
-        timeout = int(self.constitution["limits"]["validationTimeoutSeconds"])
+        timeout = int(constitution["limits"]["validationTimeoutSeconds"])
         for command in contract.document["validationCommands"]:
             result = self._run([str(part) for part in command], sandbox_path, timeout=timeout)
             validation_output.append(f"$ {' '.join(command)}\n{result.stdout.strip()}")

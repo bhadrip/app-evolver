@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Bound how App Evolver operates across every registered companion application.",
+  "nonNegotiables": [
+    "App Evolver may not modify or expand an app's evolution contract.",
+    "Every code change must be delivered through a pull request.",
+    "Protected paths may never be modified.",
+    "Failed or missing validation blocks pull-request creation."
+  ],
+  "ceilings": {
+    "maxChangedFiles": 20,
+    "validationTimeoutSeconds": 300,
+    "maxEvidenceSamples": 50
+  }
+}
